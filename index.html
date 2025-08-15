@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pocket Parrot - Mobile Sensor Platform</title>
+    
+    <!-- Local Tailwind CSS Configuration -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography,aspect-ratio,line-clamp"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#2563eb',
+                        secondary: '#64748b'
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Fallback CSS for when CDN is blocked -->
+    <link rel="stylesheet" href="fallback.css">
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" 
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" 
+          crossorigin="anonymous" />
+    
+    <!-- TensorFlow.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.13.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
+    
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+            crossorigin="anonymous"></script>
+    
+    <style>
+        /* Custom styles for map and camera */
+        .map-container {
+            height: 400px;
+            width: 100%;
+        }
+        
+        .camera-preview {
+            max-width: 100%;
+            height: auto;
+        }
+        
+        .sensor-data {
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+        }
+        
+        /* Hide elements by default */
+        .hidden {
+            display: none !important;
+        }
+        
+        /* Loading spinner */
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 2s linear infinite;
+            margin: 20px auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- Navigation Header -->
+    <nav class="bg-blue-600 text-white p-4 shadow-lg">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold">🦜 Pocket Parrot</h1>
+            <div class="flex space-x-2">
+                <button id="captureBtn" class="nav-btn bg-blue-500 hover:bg-blue-700 px-3 py-1 rounded text-sm">
+                    Capture
+                </button>
+                <button id="viewBtn" class="nav-btn bg-green-500 hover:bg-green-700 px-3 py-1 rounded text-sm">
+                    View Data
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content Container -->
+    <div class="container mx-auto p-4 max-w-4xl">
+        
+        <!-- Capture Page -->
+        <div id="capturePage" class="page">
+            <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">Sensor Capture</h2>
+                
+                <!-- Control Buttons -->
+                <div class="flex flex-wrap gap-3 mb-6">
+                    <button id="startCaptureBtn" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg font-medium">
+                        Start Continuous Capture
+                    </button>
+                    <button id="stopCaptureBtn" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg font-medium hidden">
+                        Stop Capture
+                    </button>
+                    <button id="captureNowBtn" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-medium">
+                        Capture Now
+                    </button>
+                    <button id="exportBtn" class="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-lg font-medium">
+                        Export Data
+                    </button>
+                </div>
+
+                <!-- Status Display -->
+                <div id="statusDisplay" class="bg-gray-100 p-3 rounded-lg mb-4">
+                    <div class="text-sm text-gray-600">Status: <span id="statusText" class="font-medium">Ready</span></div>
+                    <div class="text-sm text-gray-600">Records: <span id="recordCount" class="font-medium">0</span></div>
+                </div>
+
+                <!-- Live Sensor Data -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    <!-- GPS Data -->
+                    <div class="bg-blue-50 p-4 rounded-lg">
+                        <h3 class="font-semibold text-blue-800 mb-2">📍 GPS Location</h3>
+                        <div id="gpsData" class="sensor-data text-sm">
+                            <div>Latitude: <span id="latitude">--</span></div>
+                            <div>Longitude: <span id="longitude">--</span></div>
+                            <div>Altitude: <span id="altitude">--</span> m</div>
+                            <div>Speed: <span id="speed">--</span> m/s</div>
+                            <div>Accuracy: <span id="accuracy">--</span> m</div>
+                        </div>
+                    </div>
+
+                    <!-- Orientation Data -->
+                    <div class="bg-green-50 p-4 rounded-lg">
+                        <h3 class="font-semibold text-green-800 mb-2">🧭 Device Orientation</h3>
+                        <div id="orientationData" class="sensor-data text-sm">
+                            <div>Alpha: <span id="alpha">--</span>°</div>
+                            <div>Beta: <span id="beta">--</span>°</div>
+                            <div>Gamma: <span id="gamma">--</span>°</div>
+                            <div>Compass: <span id="compass">--</span>°</div>
+                        </div>
+                    </div>
+
+                    <!-- Motion Data -->
+                    <div class="bg-yellow-50 p-4 rounded-lg">
+                        <h3 class="font-semibold text-yellow-800 mb-2">🏃 Motion Sensors</h3>
+                        <div id="motionData" class="sensor-data text-sm">
+                            <div>Accel X: <span id="accelX">--</span></div>
+                            <div>Accel Y: <span id="accelY">--</span></div>
+                            <div>Accel Z: <span id="accelZ">--</span></div>
+                        </div>
+                    </div>
+
+                    <!-- Weather Data -->
+                    <div class="bg-purple-50 p-4 rounded-lg">
+                        <h3 class="font-semibold text-purple-800 mb-2">🌤️ Weather</h3>
+                        <div id="weatherData" class="sensor-data text-sm">
+                            <div>Temperature: <span id="temperature">--</span>°C</div>
+                            <div>Humidity: <span id="humidity">--</span>%</div>
+                            <div>Wind Speed: <span id="windSpeed">--</span> km/h</div>
+                            <div>Conditions: <span id="conditions">--</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Camera Section -->
+                <div class="bg-gray-50 p-4 rounded-lg mb-4">
+                    <h3 class="font-semibold text-gray-800 mb-3">📷 Camera & Object Detection</h3>
+                    <div class="flex flex-wrap gap-3 mb-3">
+                        <button id="startCameraBtn" class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded text-sm">
+                            Start Camera
+                        </button>
+                        <button id="takePhotoBtn" class="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded text-sm hidden">
+                            Take Photo
+                        </button>
+                        <button id="stopCameraBtn" class="bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded text-sm hidden">
+                            Stop Camera
+                        </button>
+                    </div>
+                    <video id="cameraPreview" class="camera-preview hidden rounded-lg border-2 border-gray-300"></video>
+                    <canvas id="photoCanvas" class="hidden"></canvas>
+                    <div id="detectionResults" class="mt-2 text-sm text-gray-600"></div>
+                </div>
+
+                <!-- Audio Section -->
+                <div class="bg-gray-50 p-4 rounded-lg">
+                    <h3 class="font-semibold text-gray-800 mb-3">🎤 Audio Recording</h3>
+                    <div class="flex flex-wrap gap-3 mb-3">
+                        <button id="startRecordingBtn" class="bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded text-sm">
+                            Start Recording
+                        </button>
+                        <button id="stopRecordingBtn" class="bg-gray-500 hover:bg-gray-600 text-white px-3 py-2 rounded text-sm hidden">
+                            Stop Recording
+                        </button>
+                    </div>
+                    <div id="recordingStatus" class="text-sm text-gray-600"></div>
+                    <audio id="audioPlayback" class="mt-2 hidden" controls></audio>
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Viewer Page -->
+        <div id="viewerPage" class="page hidden">
+            <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">Data Viewer</h2>
+                
+                <!-- Filters -->
+                <div class="flex flex-wrap gap-3 mb-4">
+                    <input type="date" id="dateFilter" class="border border-gray-300 rounded px-3 py-2 text-sm">
+                    <select id="objectFilter" class="border border-gray-300 rounded px-3 py-2 text-sm">
+                        <option value="">All Objects</option>
+                    </select>
+                    <button id="clearFiltersBtn" class="bg-gray-500 hover:bg-gray-600 text-white px-3 py-2 rounded text-sm">
+                        Clear Filters
+                    </button>
+                </div>
+
+                <!-- Map Container -->
+                <div id="mapContainer" class="map-container rounded-lg border-2 border-gray-300 mb-4"></div>
+
+                <!-- Data Table -->
+                <div class="overflow-x-auto">
+                    <table class="min-w-full bg-white border border-gray-300">
+                        <thead class="bg-gray-100">
+                            <tr>
+                                <th class="px-4 py-2 border text-left text-sm font-medium">Timestamp</th>
+                                <th class="px-4 py-2 border text-left text-sm font-medium">Location</th>
+                                <th class="px-4 py-2 border text-left text-sm font-medium">Weather</th>
+                                <th class="px-4 py-2 border text-left text-sm font-medium">Objects</th>
+                                <th class="px-4 py-2 border text-left text-sm font-medium">Media</th>
+                                <th class="px-4 py-2 border text-left text-sm font-medium">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dataTableBody">
+                            <!-- Data rows will be inserted here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading Overlay -->
+        <div id="loadingOverlay" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+            <div class="bg-white p-6 rounded-lg">
+                <div class="spinner"></div>
+                <div class="text-center mt-4">Loading...</div>
+            </div>
+        </div>
+
+        <!-- Modal for Data Details -->
+        <div id="dataModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+            <div class="bg-white p-6 rounded-lg max-w-2xl max-h-96 overflow-y-auto m-4">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-bold">Data Point Details</h3>
+                    <button id="closeModalBtn" class="text-gray-500 hover:text-gray-700">✕</button>
+                </div>
+                <div id="modalContent">
+                    <!-- Modal content will be inserted here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Application Script -->
+    <script src="app.js"></script>
+</body>
+</html>
