@@ -188,7 +188,26 @@
                     </div>
                     <video id="cameraPreview" class="camera-preview hidden rounded-lg border-2 border-gray-300"></video>
                     <canvas id="photoCanvas" class="hidden"></canvas>
-                    <div id="detectionResults" class="mt-2 text-sm text-gray-600"></div>
+                    
+                    <!-- Enhanced Detection Results -->
+                    <div id="detectionResults" class="mt-3 hidden">
+                        <h4 class="font-semibold text-gray-700 mb-2">🔍 Analysis Results</h4>
+                        
+                        <!-- Detected Objects -->
+                        <div id="detectedObjectsList" class="mb-3">
+                            <h5 class="text-sm font-medium text-gray-600 mb-1">Objects Detected:</h5>
+                            <div id="objectsContainer" class="flex flex-wrap gap-2"></div>
+                        </div>
+                        
+                        <!-- Color Palette -->
+                        <div id="colorPaletteSection" class="mb-3">
+                            <h5 class="text-sm font-medium text-gray-600 mb-1">Color Palette:</h5>
+                            <div id="colorPalette" class="flex gap-2"></div>
+                        </div>
+                        
+                        <!-- Status Text -->
+                        <div id="detectionStatus" class="text-sm text-gray-600"></div>
+                    </div>
                 </div>
 
                 <!-- Audio Section -->
