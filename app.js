@@ -106,30 +106,49 @@ class PocketParrot {
             window.addEventListener('devicemotion', (event) => this.updateMotionData(event));
         }
         
-        // Request permissions for iOS
-        this.requestPermissions();
+        // Permission request button
+        document.getElementById('requestPermissionsBtn').addEventListener('click', () => this.requestPermissions());
     }
 
     /**
      * Request permissions for iOS devices
      */
     async requestPermissions() {
+        this.updateStatus('Requesting sensor permissions...');
+        let permissionsGranted = 0;
+        let permissionsTotal = 0;
+        
         if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+            permissionsTotal++;
             try {
                 const permission = await DeviceOrientationEvent.requestPermission();
                 console.log('Device orientation permission:', permission);
+                if (permission === 'granted') permissionsGranted++;
             } catch (error) {
                 console.log('Could not request device orientation permission:', error);
             }
         }
         
         if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+            permissionsTotal++;
             try {
                 const permission = await DeviceMotionEvent.requestPermission();
                 console.log('Device motion permission:', permission);
+                if (permission === 'granted') permissionsGranted++;
             } catch (error) {
                 console.log('Could not request device motion permission:', error);
             }
+        }
+        
+        // Update status based on results
+        if (permissionsTotal === 0) {
+            this.updateStatus('Sensor permissions not required on this device');
+        } else if (permissionsGranted === permissionsTotal) {
+            this.updateStatus('All sensor permissions granted! 🎉');
+        } else if (permissionsGranted > 0) {
+            this.updateStatus(`${permissionsGranted}/${permissionsTotal} sensor permissions granted`);
+        } else {
+            this.updateStatus('Sensor permissions denied. Some features may not work.');
         }
     }
 
