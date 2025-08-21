@@ -272,6 +272,37 @@ class PocketParrot {
         if (event.alpha !== null) {
             const compass = (360 - event.alpha) % 360;
             document.getElementById('compass').textContent = compass.toFixed(1);
+            
+            // Update visual orientation indicator
+            this.updateOrientationVisual(event.alpha, event.beta, event.gamma);
+        }
+    }
+
+    /**
+     * Update visual orientation indicator
+     */
+    updateOrientationVisual(alpha, beta, gamma) {
+        const deviceRect = document.getElementById('deviceRect');
+        const compassNeedle = document.getElementById('compassNeedle');
+        
+        if (!deviceRect || !compassNeedle) return;
+        
+        // Rotate device rectangle based on gamma (device roll)
+        const deviceRotation = gamma || 0;
+        deviceRect.setAttribute('transform', `rotate(${deviceRotation} 40 40)`);
+        
+        // Rotate compass needle based on alpha (device heading)
+        const compassRotation = alpha ? (360 - alpha) % 360 : 0;
+        compassNeedle.setAttribute('transform', `rotate(${compassRotation} 40 40)`);
+        
+        // Update device rect color based on tilt (beta)
+        const tilt = Math.abs(beta || 0);
+        if (tilt > 45) {
+            deviceRect.setAttribute('fill', '#dc2626'); // red for extreme tilt
+        } else if (tilt > 15) {
+            deviceRect.setAttribute('fill', '#f59e0b'); // yellow for moderate tilt
+        } else {
+            deviceRect.setAttribute('fill', '#4b5563'); // gray for level
         }
     }
 
@@ -949,14 +980,35 @@ class PocketParrot {
         }
         
         if (point.orientation) {
+            const deviceRotation = point.orientation.gamma || 0;
+            const compassRotation = point.orientation.alpha ? (360 - point.orientation.alpha) % 360 : 0;
+            const tilt = Math.abs(point.orientation.beta || 0);
+            const deviceColor = tilt > 45 ? '#dc2626' : tilt > 15 ? '#f59e0b' : '#4b5563';
+            
             html += `
                 <div>
                     <h4 class="font-semibold">Device Orientation</h4>
-                    <p class="text-sm text-gray-600">
-                        Alpha: ${point.orientation.alpha.toFixed(1)}°, 
-                        Beta: ${point.orientation.beta.toFixed(1)}°, 
-                        Gamma: ${point.orientation.gamma.toFixed(1)}°
-                    </p>
+                    <div class="flex gap-4 items-start">
+                        <div class="text-sm text-gray-600 flex-1">
+                            Alpha: ${point.orientation.alpha.toFixed(1)}°<br>
+                            Beta: ${point.orientation.beta.toFixed(1)}°<br>
+                            Gamma: ${point.orientation.gamma.toFixed(1)}°<br>
+                            Compass: ${((360 - point.orientation.alpha) % 360).toFixed(1)}°
+                        </div>
+                        <div class="flex-shrink-0">
+                            <svg width="60" height="60" viewBox="0 0 80 80" class="border rounded bg-white">
+                                <rect x="30" y="20" width="20" height="40" rx="3" fill="${deviceColor}" stroke="#374151" stroke-width="1" transform="rotate(${deviceRotation} 40 40)"/>
+                                <g transform="rotate(${compassRotation} 40 40)">
+                                    <line x1="40" y1="40" x2="40" y2="25" stroke="#ef4444" stroke-width="2" stroke-linecap="round"/>
+                                    <circle cx="40" cy="40" r="2" fill="#ef4444"/>
+                                </g>
+                                <text x="40" y="12" text-anchor="middle" font-size="8" fill="#6b7280">N</text>
+                                <text x="68" y="44" text-anchor="middle" font-size="8" fill="#6b7280">E</text>
+                                <text x="40" y="72" text-anchor="middle" font-size="8" fill="#6b7280">S</text>
+                                <text x="12" y="44" text-anchor="middle" font-size="8" fill="#6b7280">W</text>
+                            </svg>
+                        </div>
+                    </div>
                 </div>
             `;
         }

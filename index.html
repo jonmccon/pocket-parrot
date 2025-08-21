@@ -142,11 +142,32 @@
                     <!-- Orientation Data -->
                     <div class="bg-green-50 p-4 rounded-lg">
                         <h3 class="font-semibold text-green-800 mb-2">🧭 Device Orientation</h3>
-                        <div id="orientationData" class="sensor-data text-sm">
-                            <div>Alpha: <span id="alpha">--</span>°</div>
-                            <div>Beta: <span id="beta">--</span>°</div>
-                            <div>Gamma: <span id="gamma">--</span>°</div>
-                            <div>Compass: <span id="compass">--</span>°</div>
+                        <div class="flex gap-4">
+                            <!-- Numeric data -->
+                            <div id="orientationData" class="sensor-data text-sm flex-1">
+                                <div>Alpha: <span id="alpha">--</span>°</div>
+                                <div>Beta: <span id="beta">--</span>°</div>
+                                <div>Gamma: <span id="gamma">--</span>°</div>
+                                <div>Compass: <span id="compass">--</span>°</div>
+                            </div>
+                            <!-- Visual orientation indicator -->
+                            <div class="flex-shrink-0">
+                                <div class="text-xs text-gray-600 mb-1 text-center">Orientation</div>
+                                <svg id="orientationVisual" width="80" height="80" viewBox="0 0 80 80" class="border rounded bg-white">
+                                    <!-- Device representation -->
+                                    <rect id="deviceRect" x="30" y="20" width="20" height="40" rx="3" fill="#4b5563" stroke="#374151" stroke-width="1"/>
+                                    <!-- Compass needle -->
+                                    <g id="compassNeedle">
+                                        <line x1="40" y1="40" x2="40" y2="25" stroke="#ef4444" stroke-width="2" stroke-linecap="round"/>
+                                        <circle cx="40" cy="40" r="2" fill="#ef4444"/>
+                                    </g>
+                                    <!-- Cardinal directions -->
+                                    <text x="40" y="12" text-anchor="middle" font-size="8" fill="#6b7280">N</text>
+                                    <text x="68" y="44" text-anchor="middle" font-size="8" fill="#6b7280">E</text>
+                                    <text x="40" y="72" text-anchor="middle" font-size="8" fill="#6b7280">S</text>
+                                    <text x="12" y="44" text-anchor="middle" font-size="8" fill="#6b7280">W</text>
+                                </svg>
+                            </div>
                         </div>
                     </div>
 
