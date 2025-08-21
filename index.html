@@ -267,23 +267,9 @@
                 <!-- Map Container -->
                 <div id="mapContainer" class="map-container rounded-lg border-2 border-gray-300 mb-4"></div>
 
-                <!-- Data Table -->
-                <div class="overflow-x-auto">
-                    <table class="min-w-full bg-white border border-gray-300">
-                        <thead class="bg-gray-100">
-                            <tr>
-                                <th class="px-4 py-2 border text-left text-sm font-medium">Timestamp</th>
-                                <th class="px-4 py-2 border text-left text-sm font-medium">Location</th>
-                                <th class="px-4 py-2 border text-left text-sm font-medium">Weather</th>
-                                <th class="px-4 py-2 border text-left text-sm font-medium">Objects</th>
-                                <th class="px-4 py-2 border text-left text-sm font-medium">Media</th>
-                                <th class="px-4 py-2 border text-left text-sm font-medium">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="dataTableBody">
-                            <!-- Data rows will be inserted here -->
-                        </tbody>
-                    </table>
+                <!-- Data Accordion -->
+                <div id="dataAccordion" class="space-y-3">
+                    <!-- Data samples will be inserted here as accordion items -->
                 </div>
             </div>
         </div>
@@ -293,19 +279,6 @@
             <div class="bg-white p-6 rounded-lg">
                 <div class="spinner"></div>
                 <div class="text-center mt-4">Loading...</div>
-            </div>
-        </div>
-
-        <!-- Modal for Data Details -->
-        <div id="dataModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
-            <div class="bg-white p-6 rounded-lg max-w-2xl max-h-96 overflow-y-auto m-4">
-                <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-lg font-bold">Data Point Details</h3>
-                    <button id="closeModalBtn" class="text-gray-500 hover:text-gray-700">✕</button>
-                </div>
-                <div id="modalContent">
-                    <!-- Modal content will be inserted here -->
-                </div>
             </div>
         </div>
     </div>
