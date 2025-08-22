@@ -776,12 +776,20 @@ class PocketParrot {
      * Initialize data viewer
      */
     async initViewer() {
-        // Initialize map if not already done
-        if (!this.map) {
-            this.map = L.map('mapContainer').setView([0, 0], 2);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '© OpenStreetMap contributors'
-            }).addTo(this.map);
+        // Initialize map if not already done and Leaflet is available
+        if (!this.map && typeof L !== 'undefined') {
+            try {
+                this.map = L.map('mapContainer').setView([0, 0], 2);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap contributors'
+                }).addTo(this.map);
+            } catch (error) {
+                console.warn('Could not initialize map:', error);
+                document.getElementById('mapContainer').innerHTML = '<div class="p-4 text-center text-gray-600">Map unavailable (Leaflet CDN blocked)</div>';
+            }
+        } else if (typeof L === 'undefined') {
+            // Handle case where Leaflet CDN is blocked
+            document.getElementById('mapContainer').innerHTML = '<div class="p-4 text-center text-gray-600">Map unavailable (Leaflet CDN blocked)</div>';
         }
         
         // Load and display data
@@ -825,6 +833,12 @@ class PocketParrot {
      * Display data points on map
      */
     displayDataOnMap(data) {
+        // Skip if map is not available
+        if (!this.map || typeof L === 'undefined') {
+            console.log('Map not available, skipping map display');
+            return;
+        }
+        
         // Clear existing markers
         this.markers.forEach(marker => this.map.removeLayer(marker));
         this.markers = [];
