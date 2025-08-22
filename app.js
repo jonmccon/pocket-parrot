@@ -75,10 +75,7 @@ class PocketParrot {
         document.getElementById('viewBtn').addEventListener('click', () => this.showPage('viewer'));
         
         // Capture controls
-        document.getElementById('startCaptureBtn').addEventListener('click', () => this.startContinuousCapture());
-        document.getElementById('stopCaptureBtn').addEventListener('click', () => this.stopContinuousCapture());
         document.getElementById('captureNowBtn').addEventListener('click', () => this.captureDataPoint());
-        document.getElementById('exportBtn').addEventListener('click', () => this.exportData());
         
         // Camera controls
         document.getElementById('startCameraBtn').addEventListener('click', () => this.startCamera());
@@ -91,6 +88,8 @@ class PocketParrot {
         
         // Viewer controls
         document.getElementById('clearFiltersBtn').addEventListener('click', () => this.clearFilters());
+        document.getElementById('exportBtn').addEventListener('click', () => this.exportData());
+        document.getElementById('deleteAllBtn').addEventListener('click', () => this.deleteAllData());
         
         // Filter changes
         document.getElementById('dateFilter').addEventListener('change', () => this.filterData());
@@ -139,6 +138,25 @@ class PocketParrot {
             }
         }
         
+        // Request camera and microphone permissions
+        try {
+            permissionsTotal++;
+            await navigator.mediaDevices.getUserMedia({ video: true });
+            permissionsGranted++;
+            console.log('Camera permission granted');
+        } catch (error) {
+            console.log('Camera permission denied or not available:', error);
+        }
+        
+        try {
+            permissionsTotal++;
+            await navigator.mediaDevices.getUserMedia({ audio: true });
+            permissionsGranted++;
+            console.log('Microphone permission granted');
+        } catch (error) {
+            console.log('Microphone permission denied or not available:', error);
+        }
+        
         // Update status based on results
         if (permissionsTotal === 0) {
             this.updateStatus('Sensor permissions not required on this device');
@@ -167,81 +185,6 @@ class PocketParrot {
         // Initialize page-specific functionality
         if (pageName === 'viewer') {
             this.initViewer();
-        }
-    }
-
-    /**
-     * Start continuous data capture
-     */
-    async startContinuousCapture() {
-        if (this.isCapturing) return;
-        
-        this.isCapturing = true;
-        this.updateStatus('Capturing...');
-        
-        // Update UI
-        document.getElementById('startCaptureBtn').classList.add('hidden');
-        document.getElementById('stopCaptureBtn').classList.remove('hidden');
-        
-        // Start location watching
-        this.startLocationWatch();
-        
-        // Capture data every 5 seconds
-        this.captureInterval = setInterval(() => {
-            this.captureDataPoint();
-        }, 5000);
-        
-        // Initial capture
-        await this.captureDataPoint();
-    }
-
-    /**
-     * Stop continuous data capture
-     */
-    stopContinuousCapture() {
-        if (!this.isCapturing) return;
-        
-        this.isCapturing = false;
-        this.updateStatus('Ready');
-        
-        // Update UI
-        document.getElementById('startCaptureBtn').classList.remove('hidden');
-        document.getElementById('stopCaptureBtn').classList.add('hidden');
-        
-        // Clear interval
-        if (this.captureInterval) {
-            clearInterval(this.captureInterval);
-            this.captureInterval = null;
-        }
-        
-        // Stop location watching
-        this.stopLocationWatch();
-    }
-
-    /**
-     * Start watching location
-     */
-    startLocationWatch() {
-        if (navigator.geolocation) {
-            this.locationWatchId = navigator.geolocation.watchPosition(
-                (position) => this.updateLocationData(position),
-                (error) => console.error('Location error:', error),
-                {
-                    enableHighAccuracy: true,
-                    timeout: 10000,
-                    maximumAge: 1000
-                }
-            );
-        }
-    }
-
-    /**
-     * Stop watching location
-     */
-    stopLocationWatch() {
-        if (this.locationWatchId) {
-            navigator.geolocation.clearWatch(this.locationWatchId);
-            this.locationWatchId = null;
         }
     }
 
@@ -451,6 +394,17 @@ class PocketParrot {
         // Draw video frame to canvas
         ctx.drawImage(video, 0, 0);
         
+        // Show captured photo to user
+        const capturedPhotoDisplay = document.getElementById('capturedPhotoDisplay');
+        const capturedPhotoImage = document.getElementById('capturedPhotoImage');
+        canvas.toBlob(blob => {
+            capturedPhotoImage.src = URL.createObjectURL(blob);
+            capturedPhotoDisplay.classList.remove('hidden');
+        });
+        
+        // Extract color palette from the image
+        const colorPalette = this.extractColorPalette(canvas);
+        
         // Run object detection
         let detectedObjects = [];
         if (this.objectDetectionModel) {
@@ -462,9 +416,6 @@ class PocketParrot {
                     score: pred.score,
                     bbox: pred.bbox
                 }));
-                
-                // Extract color palette from the image
-                const colorPalette = this.extractColorPalette(canvas);
                 
                 // Display enhanced results
                 this.displayEnhancedDetectionResults(detectedObjects, colorPalette);
@@ -478,7 +429,7 @@ class PocketParrot {
         // Convert canvas to blob
         return new Promise(resolve => {
             canvas.toBlob(blob => {
-                resolve({ blob, detectedObjects });
+                resolve({ blob, detectedObjects, colorPalette });
             }, 'image/jpeg', 0.8);
         });
     }
@@ -511,10 +462,10 @@ class PocketParrot {
             colorMap.set(colorKey, (colorMap.get(colorKey) || 0) + 1);
         }
         
-        // Sort by frequency and get top 3
+        // Sort by frequency and get top 5
         const sortedColors = Array.from(colorMap.entries())
             .sort((a, b) => b[1] - a[1])
-            .slice(0, 3)
+            .slice(0, 5)
             .map(([color]) => {
                 const [r, g, b] = color.split(',').map(Number);
                 return { r, g, b, hex: `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}` };
@@ -586,6 +537,9 @@ class PocketParrot {
             this.mediaRecorder = new MediaRecorder(stream);
             this.audioChunks = [];
             
+            // Set up audio visualization
+            this.setupAudioVisualization(stream);
+            
             this.mediaRecorder.ondataavailable = (event) => {
                 this.audioChunks.push(event.data);
             };
@@ -595,6 +549,9 @@ class PocketParrot {
                 const audio = document.getElementById('audioPlayback');
                 audio.src = URL.createObjectURL(blob);
                 audio.classList.remove('hidden');
+                
+                // Hide waveform visualization
+                document.getElementById('audioWaveform').classList.add('hidden');
                 
                 // Stop all tracks
                 stream.getTracks().forEach(track => track.stop());
@@ -606,11 +563,59 @@ class PocketParrot {
             document.getElementById('startRecordingBtn').classList.add('hidden');
             document.getElementById('stopRecordingBtn').classList.remove('hidden');
             document.getElementById('recordingStatus').textContent = 'Recording...';
+            document.getElementById('audioWaveform').classList.remove('hidden');
             
         } catch (error) {
             console.error('Error starting recording:', error);
             alert('Could not access microphone. Please check permissions.');
         }
+    }
+
+    /**
+     * Set up audio visualization
+     */
+    setupAudioVisualization(stream) {
+        const audioContext = new AudioContext();
+        const analyser = audioContext.createAnalyser();
+        const microphone = audioContext.createMediaStreamSource(stream);
+        
+        analyser.fftSize = 256;
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        
+        microphone.connect(analyser);
+        
+        const canvas = document.getElementById('waveformCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        const draw = () => {
+            if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
+                analyser.getByteFrequencyData(dataArray);
+                
+                ctx.fillStyle = '#f3f4f6';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                const barWidth = (canvas.width / bufferLength) * 2.5;
+                let barHeight;
+                let x = 0;
+                
+                for (let i = 0; i < bufferLength; i++) {
+                    barHeight = (dataArray[i] / 255) * canvas.height;
+                    
+                    const gradient = ctx.createLinearGradient(0, canvas.height - barHeight, 0, canvas.height);
+                    gradient.addColorStop(0, '#3b82f6');
+                    gradient.addColorStop(1, '#1d4ed8');
+                    ctx.fillStyle = gradient;
+                    
+                    ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+                    x += barWidth + 1;
+                }
+                
+                requestAnimationFrame(draw);
+            }
+        };
+        
+        draw();
     }
 
     /**
@@ -699,6 +704,7 @@ class PocketParrot {
                 const photoData = await this.takePhoto();
                 dataPoint.photoBlob = photoData.blob;
                 dataPoint.objectsDetected = photoData.detectedObjects;
+                dataPoint.colorPalette = photoData.colorPalette;
             }
             
             // Get audio if recording
@@ -797,7 +803,7 @@ class PocketParrot {
     }
 
     /**
-     * Get all data from IndexedDB
+     * Get all data from IndexedDB, ordered newest first
      */
     async getAllData() {
         return new Promise((resolve, reject) => {
@@ -805,7 +811,12 @@ class PocketParrot {
             const store = transaction.objectStore('sensorData');
             const request = store.getAll();
             
-            request.onsuccess = () => resolve(request.result);
+            request.onsuccess = () => {
+                const data = request.result;
+                // Sort by timestamp in descending order (newest first)
+                data.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                resolve(data);
+            };
             request.onerror = () => reject(request.error);
         });
     }
@@ -901,7 +912,10 @@ class PocketParrot {
                     📍 ${location} | 🌤️ ${weather} | 🔍 ${objects} ${media.join(' ')}
                 </div>
             </div>
-            <div class="ml-4">
+            <div class="flex items-center gap-2 ml-4">
+                <button class="delete-btn px-2 py-1 text-xs bg-red-500 hover:bg-red-600 text-white rounded" onclick="event.stopPropagation(); app.deleteDataEntry(${point.id}).then(() => app.loadAndDisplayData())">
+                    Delete
+                </button>
                 <svg class="accordion-chevron w-5 h-5 text-gray-400 transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
                 </svg>
@@ -1038,9 +1052,28 @@ class PocketParrot {
                 html += `
                     <div class="mb-3">
                         <h4 class="font-semibold text-gray-700 mb-2">📷 Photo</h4>
-                        <img src="${imageUrl}" alt="Captured photo" class="max-w-full h-auto rounded border">
-                    </div>
+                        <img src="${imageUrl}" alt="Captured photo" class="max-w-full h-auto rounded border mb-2">
                 `;
+                
+                // Add color palette if available
+                if (point.colorPalette && point.colorPalette.length > 0) {
+                    html += `
+                        <div class="mt-2">
+                            <h5 class="text-sm font-medium text-gray-600 mb-1">Extracted Colors:</h5>
+                            <div class="flex gap-2">
+                    `;
+                    point.colorPalette.forEach((color, index) => {
+                        html += `
+                            <div class="w-8 h-8 rounded border-2 border-gray-300" 
+                                 style="background-color: ${color.hex}" 
+                                 title="Color ${index + 1}: ${color.hex}">
+                            </div>
+                        `;
+                    });
+                    html += `</div></div>`;
+                }
+                
+                html += `</div>`;
             }
             
             if (point.audioBlob) {
@@ -1282,6 +1315,40 @@ class PocketParrot {
         document.getElementById('dateFilter').value = '';
         document.getElementById('objectFilter').value = '';
         this.loadAndDisplayData();
+    }
+
+    /**
+     * Delete a single data entry
+     */
+    async deleteDataEntry(id) {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(['sensorData'], 'readwrite');
+            const store = transaction.objectStore('sensorData');
+            const request = store.delete(id);
+            
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    /**
+     * Delete all data entries
+     */
+    async deleteAllData() {
+        if (confirm('Are you sure you want to delete all data? This action cannot be undone.')) {
+            try {
+                const transaction = this.db.transaction(['sensorData'], 'readwrite');
+                const store = transaction.objectStore('sensorData');
+                await store.clear();
+                
+                this.updateStatus('All data deleted');
+                await this.updateRecordCount();
+                this.loadAndDisplayData();
+            } catch (error) {
+                console.error('Error deleting all data:', error);
+                this.updateStatus('Delete failed');
+            }
+        }
     }
 
     /**
