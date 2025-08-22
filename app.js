@@ -91,7 +91,6 @@ class PocketParrot {
         
         // Viewer controls
         document.getElementById('clearFiltersBtn').addEventListener('click', () => this.clearFilters());
-        document.getElementById('closeModalBtn').addEventListener('click', () => this.closeModal());
         
         // Filter changes
         document.getElementById('dateFilter').addEventListener('change', () => this.filterData());
@@ -106,30 +105,49 @@ class PocketParrot {
             window.addEventListener('devicemotion', (event) => this.updateMotionData(event));
         }
         
-        // Request permissions for iOS
-        this.requestPermissions();
+        // Permission request button
+        document.getElementById('requestPermissionsBtn').addEventListener('click', () => this.requestPermissions());
     }
 
     /**
      * Request permissions for iOS devices
      */
     async requestPermissions() {
+        this.updateStatus('Requesting sensor permissions...');
+        let permissionsGranted = 0;
+        let permissionsTotal = 0;
+        
         if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+            permissionsTotal++;
             try {
                 const permission = await DeviceOrientationEvent.requestPermission();
                 console.log('Device orientation permission:', permission);
+                if (permission === 'granted') permissionsGranted++;
             } catch (error) {
                 console.log('Could not request device orientation permission:', error);
             }
         }
         
         if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+            permissionsTotal++;
             try {
                 const permission = await DeviceMotionEvent.requestPermission();
                 console.log('Device motion permission:', permission);
+                if (permission === 'granted') permissionsGranted++;
             } catch (error) {
                 console.log('Could not request device motion permission:', error);
             }
+        }
+        
+        // Update status based on results
+        if (permissionsTotal === 0) {
+            this.updateStatus('Sensor permissions not required on this device');
+        } else if (permissionsGranted === permissionsTotal) {
+            this.updateStatus('All sensor permissions granted! 🎉');
+        } else if (permissionsGranted > 0) {
+            this.updateStatus(`${permissionsGranted}/${permissionsTotal} sensor permissions granted`);
+        } else {
+            this.updateStatus('Sensor permissions denied. Some features may not work.');
         }
     }
 
@@ -253,6 +271,37 @@ class PocketParrot {
         if (event.alpha !== null) {
             const compass = (360 - event.alpha) % 360;
             document.getElementById('compass').textContent = compass.toFixed(1);
+            
+            // Update visual orientation indicator
+            this.updateOrientationVisual(event.alpha, event.beta, event.gamma);
+        }
+    }
+
+    /**
+     * Update visual orientation indicator
+     */
+    updateOrientationVisual(alpha, beta, gamma) {
+        const deviceRect = document.getElementById('deviceRect');
+        const compassNeedle = document.getElementById('compassNeedle');
+        
+        if (!deviceRect || !compassNeedle) return;
+        
+        // Rotate device rectangle based on gamma (device roll)
+        const deviceRotation = gamma || 0;
+        deviceRect.setAttribute('transform', `rotate(${deviceRotation} 40 40)`);
+        
+        // Rotate compass needle based on alpha (device heading)
+        const compassRotation = alpha ? (360 - alpha) % 360 : 0;
+        compassNeedle.setAttribute('transform', `rotate(${compassRotation} 40 40)`);
+        
+        // Update device rect color based on tilt (beta)
+        const tilt = Math.abs(beta || 0);
+        if (tilt > 45) {
+            deviceRect.setAttribute('fill', '#dc2626'); // red for extreme tilt
+        } else if (tilt > 15) {
+            deviceRect.setAttribute('fill', '#f59e0b'); // yellow for moderate tilt
+        } else {
+            deviceRect.setAttribute('fill', '#4b5563'); // gray for level
         }
     }
 
@@ -384,7 +433,7 @@ class PocketParrot {
         document.getElementById('stopCameraBtn').classList.add('hidden');
         
         // Clear detection results
-        document.getElementById('detectionResults').textContent = '';
+        document.getElementById('detectionResults').classList.add('hidden');
     }
 
     /**
@@ -414,16 +463,15 @@ class PocketParrot {
                     bbox: pred.bbox
                 }));
                 
-                // Display results
-                const resultsText = detectedObjects.length > 0 
-                    ? `Detected: ${detectedObjects.map(obj => `${obj.class} (${(obj.score * 100).toFixed(1)}%)`).join(', ')}`
-                    : 'No objects detected';
+                // Extract color palette from the image
+                const colorPalette = this.extractColorPalette(canvas);
                 
-                document.getElementById('detectionResults').textContent = resultsText;
+                // Display enhanced results
+                this.displayEnhancedDetectionResults(detectedObjects, colorPalette);
                 this.updateStatus('Ready');
             } catch (error) {
                 console.error('Object detection error:', error);
-                document.getElementById('detectionResults').textContent = 'Object detection failed';
+                this.displayDetectionError();
             }
         }
         
@@ -433,6 +481,99 @@ class PocketParrot {
                 resolve({ blob, detectedObjects });
             }, 'image/jpeg', 0.8);
         });
+    }
+
+    /**
+     * Extract dominant colors from canvas image
+     */
+    extractColorPalette(canvas) {
+        const ctx = canvas.getContext('2d');
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+        
+        // Sample pixels (every 10th pixel for performance)
+        const colorMap = new Map();
+        for (let i = 0; i < data.length; i += 40) { // RGBA, so skip by 40 to get every 10th pixel
+            const r = data[i];
+            const g = data[i + 1];
+            const b = data[i + 2];
+            
+            // Skip very dark or very light colors
+            const brightness = (r + g + b) / 3;
+            if (brightness < 30 || brightness > 240) continue;
+            
+            // Round colors to reduce variations
+            const roundedR = Math.round(r / 16) * 16;
+            const roundedG = Math.round(g / 16) * 16;
+            const roundedB = Math.round(b / 16) * 16;
+            
+            const colorKey = `${roundedR},${roundedG},${roundedB}`;
+            colorMap.set(colorKey, (colorMap.get(colorKey) || 0) + 1);
+        }
+        
+        // Sort by frequency and get top 3
+        const sortedColors = Array.from(colorMap.entries())
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 3)
+            .map(([color]) => {
+                const [r, g, b] = color.split(',').map(Number);
+                return { r, g, b, hex: `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}` };
+            });
+        
+        return sortedColors;
+    }
+
+    /**
+     * Display enhanced detection results with objects and color palette
+     */
+    displayEnhancedDetectionResults(detectedObjects, colorPalette) {
+        const resultsContainer = document.getElementById('detectionResults');
+        const objectsContainer = document.getElementById('objectsContainer');
+        const colorPaletteContainer = document.getElementById('colorPalette');
+        const statusElement = document.getElementById('detectionStatus');
+        
+        // Clear previous results
+        objectsContainer.innerHTML = '';
+        colorPaletteContainer.innerHTML = '';
+        
+        // Display detected objects
+        if (detectedObjects.length > 0) {
+            detectedObjects.forEach(obj => {
+                const objectTag = document.createElement('span');
+                objectTag.className = 'inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full';
+                objectTag.textContent = `${obj.class} (${(obj.score * 100).toFixed(1)}%)`;
+                objectsContainer.appendChild(objectTag);
+            });
+            statusElement.textContent = `Found ${detectedObjects.length} object${detectedObjects.length > 1 ? 's' : ''}`;
+        } else {
+            statusElement.textContent = 'No objects detected';
+        }
+        
+        // Display color palette
+        if (colorPalette.length > 0) {
+            colorPalette.forEach((color, index) => {
+                const colorSwatch = document.createElement('div');
+                colorSwatch.className = 'w-8 h-8 rounded border-2 border-gray-300';
+                colorSwatch.style.backgroundColor = color.hex;
+                colorSwatch.title = `Color ${index + 1}: ${color.hex}`;
+                colorPaletteContainer.appendChild(colorSwatch);
+            });
+        }
+        
+        // Show results container
+        resultsContainer.classList.remove('hidden');
+    }
+
+    /**
+     * Display detection error
+     */
+    displayDetectionError() {
+        const resultsContainer = document.getElementById('detectionResults');
+        const statusElement = document.getElementById('detectionStatus');
+        
+        statusElement.textContent = 'Object detection failed';
+        statusElement.className = 'text-sm text-red-600';
+        resultsContainer.classList.remove('hidden');
     }
 
     /**
@@ -648,7 +789,7 @@ class PocketParrot {
         try {
             const allData = await this.getAllData();
             this.displayDataOnMap(allData);
-            this.displayDataInTable(allData);
+            this.displayDataInAccordion(allData);
             this.populateObjectFilter(allData);
         } catch (error) {
             console.error('Error loading data:', error);
@@ -707,53 +848,218 @@ class PocketParrot {
         return `
             <strong>Timestamp:</strong> ${timestamp}<br>
             <strong>Objects:</strong> ${objects}<br>
-            <strong>Weather:</strong> ${point.weather ? point.weather.temperature + '°C' : 'N/A'}<br>
-            <button onclick="app.showDataDetails(${point.id})" class="bg-blue-500 text-white px-2 py-1 rounded text-sm mt-2">
-                View Details
-            </button>
+            <strong>Weather:</strong> ${point.weather ? point.weather.temperature + '°C' : 'N/A'}
         `;
     }
 
     /**
-     * Display data in table
+     * Display data in accordion style instead of table
      */
-    displayDataInTable(data) {
-        const tbody = document.getElementById('dataTableBody');
-        tbody.innerHTML = '';
+    displayDataInAccordion(data) {
+        const accordion = document.getElementById('dataAccordion');
+        accordion.innerHTML = '';
         
-        data.forEach(point => {
-            const row = document.createElement('tr');
-            row.className = 'hover:bg-gray-50';
-            
-            const timestamp = new Date(point.timestamp).toLocaleString();
-            const location = point.gps 
-                ? `${point.gps.latitude.toFixed(4)}, ${point.gps.longitude.toFixed(4)}`
-                : 'N/A';
-            const weather = point.weather 
-                ? `${point.weather.temperature}°C, ${point.weather.humidity}%`
-                : 'N/A';
-            const objects = point.objectsDetected.length > 0
-                ? point.objectsDetected.map(obj => obj.class).join(', ')
-                : 'None';
-            const media = [];
-            if (point.photoBlob) media.push('📷');
-            if (point.audioBlob) media.push('🎤');
-            
-            row.innerHTML = `
-                <td class="px-4 py-2 border text-sm">${timestamp}</td>
-                <td class="px-4 py-2 border text-sm">${location}</td>
-                <td class="px-4 py-2 border text-sm">${weather}</td>
-                <td class="px-4 py-2 border text-sm">${objects}</td>
-                <td class="px-4 py-2 border text-sm">${media.join(' ')}</td>
-                <td class="px-4 py-2 border text-sm">
-                    <button onclick="app.showDataDetails(${point.id})" class="bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded text-xs">
-                        View
-                    </button>
-                </td>
-            `;
-            
-            tbody.appendChild(row);
+        if (data.length === 0) {
+            accordion.innerHTML = '<div class="text-center text-gray-500 py-8">No data captured yet</div>';
+            return;
+        }
+        
+        data.forEach((point, index) => {
+            const accordionItem = this.createAccordionItem(point, index);
+            accordion.appendChild(accordionItem);
         });
+    }
+
+    /**
+     * Create an accordion item for a data point
+     */
+    createAccordionItem(point, index) {
+        const timestamp = new Date(point.timestamp).toLocaleString();
+        const location = point.gps 
+            ? `${point.gps.latitude.toFixed(4)}, ${point.gps.longitude.toFixed(4)}`
+            : 'N/A';
+        const weather = point.weather 
+            ? `${point.weather.temperature}°C, ${point.weather.humidity}%`
+            : 'N/A';
+        const objects = point.objectsDetected.length > 0
+            ? point.objectsDetected.map(obj => obj.class).join(', ')
+            : 'None';
+        const media = [];
+        if (point.photoBlob) media.push('📷');
+        if (point.audioBlob) media.push('🎤');
+        
+        const item = document.createElement('div');
+        item.className = 'bg-white border border-gray-200 rounded-lg shadow-sm';
+        
+        // Create summary header (always visible)
+        const header = document.createElement('div');
+        header.className = 'p-4 cursor-pointer hover:bg-gray-50 flex justify-between items-center';
+        header.innerHTML = `
+            <div class="flex-1">
+                <div class="font-medium text-gray-900">${timestamp}</div>
+                <div class="text-sm text-gray-600 mt-1">
+                    📍 ${location} | 🌤️ ${weather} | 🔍 ${objects} ${media.join(' ')}
+                </div>
+            </div>
+            <div class="ml-4">
+                <svg class="accordion-chevron w-5 h-5 text-gray-400 transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+            </div>
+        `;
+        
+        // Create details section (initially hidden)
+        const details = document.createElement('div');
+        details.className = 'accordion-content hidden border-t border-gray-200 p-4 bg-gray-50';
+        details.innerHTML = this.createDetailedViewForAccordion(point);
+        
+        // Add click handler to toggle details
+        header.addEventListener('click', () => {
+            const isExpanded = !details.classList.contains('hidden');
+            details.classList.toggle('hidden');
+            header.querySelector('.accordion-chevron').style.transform = isExpanded ? '' : 'rotate(180deg)';
+        });
+        
+        item.appendChild(header);
+        item.appendChild(details);
+        
+        return item;
+    }
+
+    /**
+     * Create detailed view content for accordion (similar to modal content but formatted for accordion)
+     */
+    createDetailedViewForAccordion(point) {
+        let html = `<div class="grid grid-cols-1 md:grid-cols-2 gap-4">`;
+        
+        // Timestamp and basic info
+        html += `
+            <div>
+                <h4 class="font-semibold text-gray-700 mb-2">📅 Timestamp</h4>
+                <p class="text-sm text-gray-600">${new Date(point.timestamp).toLocaleString()}</p>
+            </div>
+        `;
+        
+        if (point.gps) {
+            html += `
+                <div>
+                    <h4 class="font-semibold text-gray-700 mb-2">📍 GPS Location</h4>
+                    <div class="text-sm text-gray-600">
+                        <div>Lat: ${point.gps.latitude.toFixed(6)}</div>
+                        <div>Lon: ${point.gps.longitude.toFixed(6)}</div>
+                        <div>Alt: ${point.gps.altitude ? point.gps.altitude.toFixed(1) + 'm' : 'N/A'}</div>
+                        <div>Accuracy: ${point.gps.accuracy.toFixed(1)}m</div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        if (point.orientation) {
+            const deviceRotation = point.orientation.gamma || 0;
+            const compassRotation = point.orientation.alpha ? (360 - point.orientation.alpha) % 360 : 0;
+            const tilt = Math.abs(point.orientation.beta || 0);
+            const deviceColor = tilt > 45 ? '#dc2626' : tilt > 15 ? '#f59e0b' : '#4b5563';
+            
+            html += `
+                <div>
+                    <h4 class="font-semibold text-gray-700 mb-2">🧭 Device Orientation</h4>
+                    <div class="flex gap-3">
+                        <div class="text-sm text-gray-600 flex-1">
+                            <div>Alpha: ${point.orientation.alpha.toFixed(1)}°</div>
+                            <div>Beta: ${point.orientation.beta.toFixed(1)}°</div>
+                            <div>Gamma: ${point.orientation.gamma.toFixed(1)}°</div>
+                            <div>Compass: ${((360 - point.orientation.alpha) % 360).toFixed(1)}°</div>
+                        </div>
+                        <div>
+                            <svg width="50" height="50" viewBox="0 0 80 80" class="border rounded bg-white">
+                                <rect x="30" y="20" width="20" height="40" rx="3" fill="${deviceColor}" stroke="#374151" stroke-width="1" transform="rotate(${deviceRotation} 40 40)"/>
+                                <g transform="rotate(${compassRotation} 40 40)">
+                                    <line x1="40" y1="40" x2="40" y2="25" stroke="#ef4444" stroke-width="2" stroke-linecap="round"/>
+                                    <circle cx="40" cy="40" r="2" fill="#ef4444"/>
+                                </g>
+                                <text x="40" y="12" text-anchor="middle" font-size="6" fill="#6b7280">N</text>
+                                <text x="68" y="44" text-anchor="middle" font-size="6" fill="#6b7280">E</text>
+                                <text x="40" y="72" text-anchor="middle" font-size="6" fill="#6b7280">S</text>
+                                <text x="12" y="44" text-anchor="middle" font-size="6" fill="#6b7280">W</text>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        if (point.motion) {
+            html += `
+                <div>
+                    <h4 class="font-semibold text-gray-700 mb-2">🏃 Motion Data</h4>
+                    <div class="text-sm text-gray-600">
+                        <div>Accel X: ${point.motion.accelerationX.toFixed(2)}</div>
+                        <div>Y: ${point.motion.accelerationY.toFixed(2)}</div>
+                        <div>Z: ${point.motion.accelerationZ.toFixed(2)}</div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        if (point.weather) {
+            html += `
+                <div>
+                    <h4 class="font-semibold text-gray-700 mb-2">🌤️ Weather</h4>
+                    <div class="text-sm text-gray-600">
+                        <div>Temperature: ${point.weather.temperature}°C</div>
+                        <div>Humidity: ${point.weather.humidity}%</div>
+                        <div>Wind: ${point.weather.windSpeed} km/h</div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        if (point.objectsDetected.length > 0) {
+            html += `
+                <div>
+                    <h4 class="font-semibold text-gray-700 mb-2">🔍 Detected Objects</h4>
+                    <div class="flex flex-wrap gap-1">
+                        ${point.objectsDetected.map(obj => 
+                            `<span class="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">${obj.class} (${(obj.score * 100).toFixed(1)}%)</span>`
+                        ).join('')}
+                    </div>
+                </div>
+            `;
+        }
+        
+        html += `</div>`; // Close grid
+        
+        // Media section (full width)
+        if (point.photoBlob || point.audioBlob) {
+            html += `<div class="mt-4 pt-4 border-t border-gray-200">`;
+            
+            if (point.photoBlob) {
+                const imageUrl = URL.createObjectURL(point.photoBlob);
+                html += `
+                    <div class="mb-3">
+                        <h4 class="font-semibold text-gray-700 mb-2">📷 Photo</h4>
+                        <img src="${imageUrl}" alt="Captured photo" class="max-w-full h-auto rounded border">
+                    </div>
+                `;
+            }
+            
+            if (point.audioBlob) {
+                const audioUrl = URL.createObjectURL(point.audioBlob);
+                html += `
+                    <div>
+                        <h4 class="font-semibold text-gray-700 mb-2">🎤 Audio</h4>
+                        <audio controls class="w-full">
+                            <source src="${audioUrl}" type="audio/wav">
+                            Your browser does not support audio playback.
+                        </audio>
+                    </div>
+                `;
+            }
+            
+            html += `</div>`;
+        }
+        
+        return html;
     }
 
     /**
@@ -838,14 +1144,35 @@ class PocketParrot {
         }
         
         if (point.orientation) {
+            const deviceRotation = point.orientation.gamma || 0;
+            const compassRotation = point.orientation.alpha ? (360 - point.orientation.alpha) % 360 : 0;
+            const tilt = Math.abs(point.orientation.beta || 0);
+            const deviceColor = tilt > 45 ? '#dc2626' : tilt > 15 ? '#f59e0b' : '#4b5563';
+            
             html += `
                 <div>
                     <h4 class="font-semibold">Device Orientation</h4>
-                    <p class="text-sm text-gray-600">
-                        Alpha: ${point.orientation.alpha.toFixed(1)}°, 
-                        Beta: ${point.orientation.beta.toFixed(1)}°, 
-                        Gamma: ${point.orientation.gamma.toFixed(1)}°
-                    </p>
+                    <div class="flex gap-4 items-start">
+                        <div class="text-sm text-gray-600 flex-1">
+                            Alpha: ${point.orientation.alpha.toFixed(1)}°<br>
+                            Beta: ${point.orientation.beta.toFixed(1)}°<br>
+                            Gamma: ${point.orientation.gamma.toFixed(1)}°<br>
+                            Compass: ${((360 - point.orientation.alpha) % 360).toFixed(1)}°
+                        </div>
+                        <div class="flex-shrink-0">
+                            <svg width="60" height="60" viewBox="0 0 80 80" class="border rounded bg-white">
+                                <rect x="30" y="20" width="20" height="40" rx="3" fill="${deviceColor}" stroke="#374151" stroke-width="1" transform="rotate(${deviceRotation} 40 40)"/>
+                                <g transform="rotate(${compassRotation} 40 40)">
+                                    <line x1="40" y1="40" x2="40" y2="25" stroke="#ef4444" stroke-width="2" stroke-linecap="round"/>
+                                    <circle cx="40" cy="40" r="2" fill="#ef4444"/>
+                                </g>
+                                <text x="40" y="12" text-anchor="middle" font-size="8" fill="#6b7280">N</text>
+                                <text x="68" y="44" text-anchor="middle" font-size="8" fill="#6b7280">E</text>
+                                <text x="40" y="72" text-anchor="middle" font-size="8" fill="#6b7280">S</text>
+                                <text x="12" y="44" text-anchor="middle" font-size="8" fill="#6b7280">W</text>
+                            </svg>
+                        </div>
+                    </div>
                 </div>
             `;
         }
@@ -915,13 +1242,6 @@ class PocketParrot {
     }
 
     /**
-     * Close modal
-     */
-    closeModal() {
-        document.getElementById('dataModal').classList.add('hidden');
-    }
-
-    /**
      * Filter data based on current filter settings
      */
     async filterData() {
@@ -949,7 +1269,7 @@ class PocketParrot {
             }
             
             this.displayDataOnMap(filteredData);
-            this.displayDataInTable(filteredData);
+            this.displayDataInAccordion(filteredData);
         } catch (error) {
             console.error('Error filtering data:', error);
         }

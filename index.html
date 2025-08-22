@@ -102,6 +102,9 @@
                 
                 <!-- Control Buttons -->
                 <div class="flex flex-wrap gap-3 mb-6">
+                    <button id="requestPermissionsBtn" class="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg font-medium">
+                        📱 Request Sensor Permissions
+                    </button>
                     <button id="startCaptureBtn" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg font-medium">
                         Start Continuous Capture
                     </button>
@@ -139,11 +142,32 @@
                     <!-- Orientation Data -->
                     <div class="bg-green-50 p-4 rounded-lg">
                         <h3 class="font-semibold text-green-800 mb-2">🧭 Device Orientation</h3>
-                        <div id="orientationData" class="sensor-data text-sm">
-                            <div>Alpha: <span id="alpha">--</span>°</div>
-                            <div>Beta: <span id="beta">--</span>°</div>
-                            <div>Gamma: <span id="gamma">--</span>°</div>
-                            <div>Compass: <span id="compass">--</span>°</div>
+                        <div class="flex gap-4">
+                            <!-- Numeric data -->
+                            <div id="orientationData" class="sensor-data text-sm flex-1">
+                                <div>Alpha: <span id="alpha">--</span>°</div>
+                                <div>Beta: <span id="beta">--</span>°</div>
+                                <div>Gamma: <span id="gamma">--</span>°</div>
+                                <div>Compass: <span id="compass">--</span>°</div>
+                            </div>
+                            <!-- Visual orientation indicator -->
+                            <div class="flex-shrink-0">
+                                <div class="text-xs text-gray-600 mb-1 text-center">Orientation</div>
+                                <svg id="orientationVisual" width="80" height="80" viewBox="0 0 80 80" class="border rounded bg-white">
+                                    <!-- Device representation -->
+                                    <rect id="deviceRect" x="30" y="20" width="20" height="40" rx="3" fill="#4b5563" stroke="#374151" stroke-width="1"/>
+                                    <!-- Compass needle -->
+                                    <g id="compassNeedle">
+                                        <line x1="40" y1="40" x2="40" y2="25" stroke="#ef4444" stroke-width="2" stroke-linecap="round"/>
+                                        <circle cx="40" cy="40" r="2" fill="#ef4444"/>
+                                    </g>
+                                    <!-- Cardinal directions -->
+                                    <text x="40" y="12" text-anchor="middle" font-size="8" fill="#6b7280">N</text>
+                                    <text x="68" y="44" text-anchor="middle" font-size="8" fill="#6b7280">E</text>
+                                    <text x="40" y="72" text-anchor="middle" font-size="8" fill="#6b7280">S</text>
+                                    <text x="12" y="44" text-anchor="middle" font-size="8" fill="#6b7280">W</text>
+                                </svg>
+                            </div>
                         </div>
                     </div>
 
@@ -185,7 +209,26 @@
                     </div>
                     <video id="cameraPreview" class="camera-preview hidden rounded-lg border-2 border-gray-300"></video>
                     <canvas id="photoCanvas" class="hidden"></canvas>
-                    <div id="detectionResults" class="mt-2 text-sm text-gray-600"></div>
+                    
+                    <!-- Enhanced Detection Results -->
+                    <div id="detectionResults" class="mt-3 hidden">
+                        <h4 class="font-semibold text-gray-700 mb-2">🔍 Analysis Results</h4>
+                        
+                        <!-- Detected Objects -->
+                        <div id="detectedObjectsList" class="mb-3">
+                            <h5 class="text-sm font-medium text-gray-600 mb-1">Objects Detected:</h5>
+                            <div id="objectsContainer" class="flex flex-wrap gap-2"></div>
+                        </div>
+                        
+                        <!-- Color Palette -->
+                        <div id="colorPaletteSection" class="mb-3">
+                            <h5 class="text-sm font-medium text-gray-600 mb-1">Color Palette:</h5>
+                            <div id="colorPalette" class="flex gap-2"></div>
+                        </div>
+                        
+                        <!-- Status Text -->
+                        <div id="detectionStatus" class="text-sm text-gray-600"></div>
+                    </div>
                 </div>
 
                 <!-- Audio Section -->
@@ -224,23 +267,9 @@
                 <!-- Map Container -->
                 <div id="mapContainer" class="map-container rounded-lg border-2 border-gray-300 mb-4"></div>
 
-                <!-- Data Table -->
-                <div class="overflow-x-auto">
-                    <table class="min-w-full bg-white border border-gray-300">
-                        <thead class="bg-gray-100">
-                            <tr>
-                                <th class="px-4 py-2 border text-left text-sm font-medium">Timestamp</th>
-                                <th class="px-4 py-2 border text-left text-sm font-medium">Location</th>
-                                <th class="px-4 py-2 border text-left text-sm font-medium">Weather</th>
-                                <th class="px-4 py-2 border text-left text-sm font-medium">Objects</th>
-                                <th class="px-4 py-2 border text-left text-sm font-medium">Media</th>
-                                <th class="px-4 py-2 border text-left text-sm font-medium">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="dataTableBody">
-                            <!-- Data rows will be inserted here -->
-                        </tbody>
-                    </table>
+                <!-- Data Accordion -->
+                <div id="dataAccordion" class="space-y-3">
+                    <!-- Data samples will be inserted here as accordion items -->
                 </div>
             </div>
         </div>
@@ -250,19 +279,6 @@
             <div class="bg-white p-6 rounded-lg">
                 <div class="spinner"></div>
                 <div class="text-center mt-4">Loading...</div>
-            </div>
-        </div>
-
-        <!-- Modal for Data Details -->
-        <div id="dataModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
-            <div class="bg-white p-6 rounded-lg max-w-2xl max-h-96 overflow-y-auto m-4">
-                <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-lg font-bold">Data Point Details</h3>
-                    <button id="closeModalBtn" class="text-gray-500 hover:text-gray-700">✕</button>
-                </div>
-                <div id="modalContent">
-                    <!-- Modal content will be inserted here -->
-                </div>
             </div>
         </div>
     </div>
