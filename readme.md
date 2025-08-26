@@ -2,6 +2,8 @@
 
 A browser-based data capture and visualization app that runs entirely client-side with offline support. Capture sensor data, take photos with object detection, record audio, and visualize everything on an interactive map.
 
+https://jonmccon.github.io/pocket-parrot/
+
 ## Features
 
 ### 📱 Sensor Integration
