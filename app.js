@@ -9,6 +9,7 @@ class PocketParrot {
         this.isCapturing = false;
         this.captureInterval = null;
         this.currentPosition = null;
+        this.locationWatchId = null;
         this.objectDetectionModel = null;
         this.mediaRecorder = null;
         this.audioChunks = [];
@@ -138,6 +139,37 @@ class PocketParrot {
             }
         }
         
+        // Request geolocation permission
+        if (navigator.geolocation) {
+            permissionsTotal++;
+            try {
+                const timeoutPromise = new Promise((_, reject) => {
+                    setTimeout(() => reject(new Error('GPS permission timeout')), 5000);
+                });
+                
+                const gpsPromise = new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(
+                        (position) => {
+                            permissionsGranted++;
+                            console.log('GPS permission granted');
+                            this.updateLocationData(position);
+                            this.startLocationTracking();
+                            resolve(position);
+                        },
+                        (error) => {
+                            console.log('GPS permission denied or not available:', error);
+                            reject(error);
+                        },
+                        { enableHighAccuracy: true, timeout: 5000, maximumAge: 60000 }
+                    );
+                });
+                
+                await Promise.race([gpsPromise, timeoutPromise]);
+            } catch (error) {
+                console.log('GPS permission denied or not available:', error);
+            }
+        }
+
         // Request camera and microphone permissions
         try {
             permissionsTotal++;
@@ -200,6 +232,33 @@ class PocketParrot {
         document.getElementById('altitude').textContent = coords.altitude ? coords.altitude.toFixed(1) : '--';
         document.getElementById('speed').textContent = coords.speed ? coords.speed.toFixed(1) : '--';
         document.getElementById('accuracy').textContent = coords.accuracy.toFixed(1);
+    }
+
+    /**
+     * Start continuous location tracking
+     */
+    startLocationTracking() {
+        if (!navigator.geolocation) {
+            console.log('Geolocation is not supported by this browser');
+            return;
+        }
+
+        // Watch position for continuous updates
+        this.locationWatchId = navigator.geolocation.watchPosition(
+            (position) => {
+                this.updateLocationData(position);
+            },
+            (error) => {
+                console.log('Location tracking error:', error);
+            },
+            {
+                enableHighAccuracy: true,
+                timeout: 15000,
+                maximumAge: 60000
+            }
+        );
+        
+        console.log('Location tracking started');
     }
 
     /**
