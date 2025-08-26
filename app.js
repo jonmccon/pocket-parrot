@@ -986,9 +986,6 @@ class PocketParrot {
                 </div>
             </div>
             <div class="flex items-center gap-2 ml-4">
-                <button class="delete-btn px-2 py-1 text-xs bg-red-500 hover:bg-red-600 text-white rounded" onclick="event.stopPropagation(); app.deleteDataEntry(${point.id}).then(() => app.loadAndDisplayData())">
-                    Delete
-                </button>
                 <svg class="accordion-chevron w-5 h-5 text-gray-400 transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
                 </svg>
@@ -1164,6 +1161,15 @@ class PocketParrot {
             
             html += `</div>`;
         }
+        
+        // Add delete button aligned to the right
+        html += `
+            <div class="mt-4 pt-4 border-t border-gray-200 flex justify-end">
+                <button class="delete-btn px-3 py-2 text-sm bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium transition-colors" onclick="event.stopPropagation(); app.deleteDataEntry(${point.id}).then(() => app.loadAndDisplayData())">
+                    🗑️ Delete Entry
+                </button>
+            </div>
+        `;
         
         return html;
     }
