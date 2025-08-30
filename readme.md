@@ -168,7 +168,7 @@ The repository uses GitHub Actions for automated deployment:
 ### 🔍 Preview Deployments
 - **Trigger**: Pushes to branches matching `copilot-*` or `copilot/*` patterns
 - **Workflow**: `.github/workflows/preview-deploy.yml`
-- **Deployment**: Downloadable artifacts for team review
+- **Deployment**: Live GitHub Pages environments with unique URLs
 - **Purpose**: Isolated preview builds for testing Copilot-generated changes
 
 #### Branch Naming Convention
@@ -180,10 +180,10 @@ Use these patterns for Copilot-related branches to trigger preview builds:
 
 #### Accessing Preview Builds
 1. Push to a `copilot-*` branch
-2. GitHub Actions will build a preview deployment
-3. Download the artifact from the Actions tab
-4. Extract and serve locally: `python3 -m http.server 8080`
-5. Preview builds include a visual banner identifying them as previews
+2. GitHub Actions will deploy a live preview to GitHub Pages
+3. Access your preview directly at the generated URL (provided in PR comments and Action summaries)
+4. Preview builds include a visual banner identifying them as previews
+5. No download or local setup required!
 
 ## Security & Privacy
 

@@ -1,4 +1,4 @@
-# Workflow for deploying preview builds of copilot branches
+# Workflow for deploying preview builds of copilot branches to GitHub Pages
 name: Deploy preview for copilot branches
 
 on:
@@ -11,7 +11,7 @@ on:
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
-# Sets permissions of the GITHUB_TOKEN to allow deployment
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
   contents: read
   pages: write
@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: preview-${{ github.ref_name }}
-      url: ${{ steps.deployment.outputs.artifact-url }}
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -49,15 +49,20 @@ jobs:
           # Add preview banner to the HTML
           sed -i "/<body[^>]*>/a\\
           <div style=\"background: #fbbf24; color: #92400e; padding: 8px; text-align: center; font-weight: bold; position: sticky; top: 0; z-index: 1000;\">\\
-            🔍 PREVIEW BUILD - Branch: ${BRANCH_NAME} | Commit: ${COMMIT_SHA}\\
+            🔍 PREVIEW BUILD - Branch: ${BRANCH_NAME} | Commit: ${COMMIT_SHA:0:7}\\
           </div>" index.html
 
-      - name: Upload preview artifact
-        uses: actions/upload-artifact@v4
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+        
+      - name: Upload artifact to Pages
+        uses: actions/upload-pages-artifact@v3
         with:
-          name: preview-${{ github.ref_name }}-${{ github.run_number }}
-          path: .
-          retention-days: 30
+          path: '.'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
 
       - name: Create deployment summary
         run: |
@@ -65,17 +70,11 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Artifact:** \`preview-${{ github.ref_name }}-${{ github.run_number }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** \`preview-${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📥 How to Access Preview" >> $GITHUB_STEP_SUMMARY
-          echo "1. Go to the [Actions tab](../../actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
-          echo "2. Download the artifact: \`preview-${{ github.ref_name }}-${{ github.run_number }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "3. Extract the files and serve them locally:" >> $GITHUB_STEP_SUMMARY
-          echo "   \`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "   cd extracted-folder" >> $GITHUB_STEP_SUMMARY
-          echo "   python3 -m http.server 8080" >> $GITHUB_STEP_SUMMARY
-          echo "   \`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "4. Open http://localhost:8080 in your browser" >> $GITHUB_STEP_SUMMARY
+          echo "### 🌐 Direct Access" >> $GITHUB_STEP_SUMMARY
+          echo "Your preview is now live at:" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 **[${{ steps.deployment.outputs.page_url }}](${{ steps.deployment.outputs.page_url }})**" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### ✨ Features" >> $GITHUB_STEP_SUMMARY
           echo "- 🦜 Full Pocket Parrot functionality" >> $GITHUB_STEP_SUMMARY
@@ -84,6 +83,7 @@ jobs:
           echo "- 🎤 Audio recording" >> $GITHUB_STEP_SUMMARY
           echo "- 🗺️ Interactive mapping" >> $GITHUB_STEP_SUMMARY
           echo "- 💾 Offline support" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔍 Preview banner for easy identification" >> $GITHUB_STEP_SUMMARY
 
       - name: Comment on PR if applicable
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/copilot')
@@ -103,14 +103,12 @@ jobs:
               const comment = `🔍 **Preview deployment ready!**
               
               **Branch:** \`${{ github.ref_name }}\`
-              **Artifact:** \`preview-${{ github.ref_name }}-${{ github.run_number }}\`
+              **Environment:** \`preview-${{ github.ref_name }}\`
               
-              ### 📥 Access Preview:
-              1. [Download artifact](../../actions/runs/${{ github.run_id }})
-              2. Extract and run: \`python3 -m http.server 8080\`
-              3. Open: http://localhost:8080
+              ### 🌐 Direct Access:
+              🔗 **[${{ steps.deployment.outputs.page_url }}](${{ steps.deployment.outputs.page_url }})**
               
-              The preview includes a banner identifying it as a preview build.`;
+              The preview is now live and includes a banner identifying it as a preview build. No download required!`;
               
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
