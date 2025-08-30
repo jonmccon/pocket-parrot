@@ -320,16 +320,39 @@ class PocketParrot {
     }
 
     /**
-     * Fetch weather data for current location
+     * Fetch weather data for current location with enhanced status reporting
      */
-    async fetchWeatherData(lat, lon) {
+    async fetchWeatherData(lat, lon, locationSource = 'gps') {
+        const startTime = Date.now();
+        
+        // Validate input parameters
+        if (!lat || !lon || isNaN(lat) || isNaN(lon)) {
+            const result = {
+                data: null,
+                status: 'missing_location',
+                message: 'Missing or invalid location coordinates',
+                accuracy: 'none',
+                locationSource: locationSource,
+                timestamp: new Date().toISOString()
+            };
+            this.updateWeatherUI(result);
+            return result;
+        }
+        
         try {
+            // Add timeout to fetch request
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+            
             const response = await fetch(
-                `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,precipitation,cloud_cover`
+                `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,precipitation,cloud_cover`,
+                { signal: controller.signal }
             );
             
+            clearTimeout(timeoutId);
+            
             if (!response.ok) {
-                throw new Error('Weather API request failed');
+                throw new Error(`Weather API request failed: ${response.status} ${response.statusText}`);
             }
             
             const data = await response.json();
@@ -346,17 +369,156 @@ class PocketParrot {
                 cloudCover: hourly.cloud_cover[0]
             };
             
-            // Update UI
-            document.getElementById('temperature').textContent = weatherData.temperature;
-            document.getElementById('humidity').textContent = weatherData.humidity;
-            document.getElementById('windSpeed').textContent = weatherData.windSpeed;
-            document.getElementById('conditions').textContent = this.getWeatherDescription(weatherData.weatherCode);
+            const result = {
+                data: weatherData,
+                status: 'success',
+                message: 'Weather data retrieved successfully',
+                accuracy: locationSource === 'gps' ? 'high' : 'medium',
+                locationSource: locationSource,
+                responseTime: Date.now() - startTime,
+                timestamp: new Date().toISOString()
+            };
             
-            return weatherData;
+            this.updateWeatherUI(result);
+            return result;
+            
         } catch (error) {
+            let status, message;
+            
+            if (error.name === 'AbortError') {
+                status = 'timeout';
+                message = 'Weather request timed out';
+            } else if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+                status = 'network_error';
+                message = 'Network connection failed';
+            } else if (error.message.includes('Weather API request failed')) {
+                status = 'api_error';
+                message = error.message;
+            } else {
+                status = 'unknown_error';
+                message = 'Unknown error occurred';
+            }
+            
             console.error('Error fetching weather data:', error);
+            
+            const result = {
+                data: null,
+                status: status,
+                message: message,
+                accuracy: 'none',
+                locationSource: locationSource,
+                responseTime: Date.now() - startTime,
+                timestamp: new Date().toISOString()
+            };
+            
+            this.updateWeatherUI(result);
+            return result;
+        }
+    }
+
+    /**
+     * Update weather UI with result data and status
+     */
+    updateWeatherUI(result) {
+        const statusElement = document.getElementById('weatherStatus');
+        const accuracyElement = document.getElementById('weatherAccuracy');
+        
+        if (result.data) {
+            // Update weather data displays
+            document.getElementById('temperature').textContent = result.data.temperature;
+            document.getElementById('humidity').textContent = result.data.humidity;
+            document.getElementById('windSpeed').textContent = result.data.windSpeed;
+            document.getElementById('conditions').textContent = this.getWeatherDescription(result.data.weatherCode);
+            
+            // Update status indicators
+            if (statusElement) {
+                statusElement.textContent = `✓ ${result.message}`;
+                statusElement.className = 'text-xs text-green-600';
+            }
+            
+            if (accuracyElement) {
+                const accuracyText = result.locationSource === 'gps' ? 'GPS Location' : 'IP Location';
+                accuracyElement.textContent = accuracyText;
+                accuracyElement.className = result.accuracy === 'high' ? 'text-xs text-green-600' : 'text-xs text-yellow-600';
+            }
+        } else {
+            // Clear weather data on error
+            document.getElementById('temperature').textContent = '--';
+            document.getElementById('humidity').textContent = '--';
+            document.getElementById('windSpeed').textContent = '--';
+            document.getElementById('conditions').textContent = '--';
+            
+            // Update status with error
+            if (statusElement) {
+                statusElement.textContent = `⚠ ${result.message}`;
+                statusElement.className = 'text-xs text-red-600';
+            }
+            
+            if (accuracyElement) {
+                accuracyElement.textContent = 'No Data';
+                accuracyElement.className = 'text-xs text-gray-500';
+            }
+        }
+    }
+
+    /**
+     * Get approximate location from IP address as fallback
+     */
+    async getFallbackLocation() {
+        try {
+            const response = await fetch('https://ipapi.co/json/', {
+                signal: AbortSignal.timeout(5000) // 5 second timeout
+            });
+            
+            if (!response.ok) {
+                throw new Error('IP geolocation request failed');
+            }
+            
+            const data = await response.json();
+            
+            if (data.latitude && data.longitude) {
+                return {
+                    latitude: parseFloat(data.latitude),
+                    longitude: parseFloat(data.longitude),
+                    city: data.city,
+                    country: data.country_name,
+                    accuracy: 50000 // IP-based location is typically accurate to ~50km
+                };
+            } else {
+                throw new Error('No location data available from IP');
+            }
+        } catch (error) {
+            console.error('Error getting fallback location:', error);
             return null;
         }
+    }
+
+    /**
+     * Get weather with fallback location if GPS is unavailable
+     */
+    async getWeatherWithFallback(gpsLocation = null) {
+        // Try GPS location first
+        if (gpsLocation && gpsLocation.latitude && gpsLocation.longitude) {
+            return await this.fetchWeatherData(gpsLocation.latitude, gpsLocation.longitude, 'gps');
+        }
+        
+        // Fallback to IP-based location
+        console.log('GPS location unavailable, trying IP-based fallback...');
+        const fallbackLocation = await this.getFallbackLocation();
+        
+        if (fallbackLocation) {
+            return await this.fetchWeatherData(fallbackLocation.latitude, fallbackLocation.longitude, 'ip');
+        }
+        
+        // No location available
+        return {
+            data: null,
+            status: 'no_location',
+            message: 'No location available for weather data',
+            accuracy: 'none',
+            locationSource: 'none',
+            timestamp: new Date().toISOString()
+        };
     }
 
     /**
@@ -710,7 +872,7 @@ class PocketParrot {
                 audioBlob: null
             };
             
-            // Get current location
+            // Get current location and weather
             if (this.currentPosition) {
                 const coords = this.currentPosition.coords;
                 dataPoint.gps = {
@@ -722,8 +884,16 @@ class PocketParrot {
                     heading: coords.heading
                 };
                 
-                // Fetch weather data
-                dataPoint.weather = await this.fetchWeatherData(coords.latitude, coords.longitude);
+                // Fetch weather data with GPS location
+                const weatherResult = await this.getWeatherWithFallback({
+                    latitude: coords.latitude,
+                    longitude: coords.longitude
+                });
+                dataPoint.weather = weatherResult;
+            } else {
+                // No GPS available, try IP-based weather fallback
+                const weatherResult = await this.getWeatherWithFallback(null);
+                dataPoint.weather = weatherResult;
             }
             
             // Get orientation data
@@ -932,7 +1102,7 @@ class PocketParrot {
         return `
             <strong>Timestamp:</strong> ${timestamp}<br>
             <strong>Objects:</strong> ${objects}<br>
-            <strong>Weather:</strong> ${point.weather ? point.weather.temperature + '°C' : 'N/A'}
+            <strong>Weather:</strong> ${point.weather && point.weather.data ? point.weather.data.temperature + '°C' : 'N/A'}
         `;
     }
 
@@ -962,8 +1132,8 @@ class PocketParrot {
         const location = point.gps 
             ? `${point.gps.latitude.toFixed(4)}, ${point.gps.longitude.toFixed(4)}`
             : 'N/A';
-        const weather = point.weather 
-            ? `${point.weather.temperature}°C, ${point.weather.humidity}%`
+        const weather = point.weather && point.weather.data
+            ? `${point.weather.data.temperature}°C, ${point.weather.data.humidity}%`
             : 'N/A';
         const objects = point.objectsDetected.length > 0
             ? point.objectsDetected.map(obj => obj.class).join(', ')
@@ -1085,14 +1255,26 @@ class PocketParrot {
             `;
         }
         
-        if (point.weather) {
+        if (point.weather && point.weather.data) {
             html += `
                 <div>
                     <h4 class="font-semibold text-gray-700 mb-2">🌤️ Weather</h4>
                     <div class="text-sm text-gray-600">
-                        <div>Temperature: ${point.weather.temperature}°C</div>
-                        <div>Humidity: ${point.weather.humidity}%</div>
-                        <div>Wind: ${point.weather.windSpeed} km/h</div>
+                        <div>Temperature: ${point.weather.data.temperature}°C</div>
+                        <div>Humidity: ${point.weather.data.humidity}%</div>
+                        <div>Wind: ${point.weather.data.windSpeed} km/h</div>
+                        <div class="text-xs text-gray-500 mt-1">
+                            Status: ${point.weather.message} (${point.weather.locationSource})
+                        </div>
+                    </div>
+                </div>
+            `;
+        } else if (point.weather) {
+            html += `
+                <div>
+                    <h4 class="font-semibold text-gray-700 mb-2">🌤️ Weather</h4>
+                    <div class="text-sm text-red-600">
+                        ${point.weather.message || 'Weather data unavailable'}
                     </div>
                 </div>
             `;
@@ -1302,14 +1484,26 @@ class PocketParrot {
             `;
         }
         
-        if (point.weather) {
+        if (point.weather && point.weather.data) {
             html += `
                 <div>
                     <h4 class="font-semibold">Weather</h4>
                     <p class="text-sm text-gray-600">
-                        Temperature: ${point.weather.temperature}°C<br>
-                        Humidity: ${point.weather.humidity}%<br>
-                        Wind: ${point.weather.windSpeed} km/h
+                        Temperature: ${point.weather.data.temperature}°C<br>
+                        Humidity: ${point.weather.data.humidity}%<br>
+                        Wind: ${point.weather.data.windSpeed} km/h<br>
+                        <span class="text-xs text-gray-500">
+                            Status: ${point.weather.message} (${point.weather.locationSource})
+                        </span>
+                    </p>
+                </div>
+            `;
+        } else if (point.weather) {
+            html += `
+                <div>
+                    <h4 class="font-semibold">Weather</h4>
+                    <p class="text-sm text-red-600">
+                        ${point.weather.message || 'Weather data unavailable'}
                     </p>
                 </div>
             `;
