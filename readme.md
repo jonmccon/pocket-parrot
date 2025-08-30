@@ -155,6 +155,36 @@ The app consists of:
 - `service-worker.js`: Offline support and caching
 - `fallback.css`: Backup styling when CDN unavailable
 
+## GitHub Actions Workflows
+
+The repository uses GitHub Actions for automated deployment:
+
+### 🚀 Production Deployment
+- **Trigger**: Pushes to `main` branch
+- **Workflow**: `.github/workflows/static.yml`
+- **Deployment**: GitHub Pages at https://jonmccon.github.io/pocket-parrot/
+- **Purpose**: Production deployment for stable releases
+
+### 🔍 Preview Deployments
+- **Trigger**: Pushes to branches matching `copilot-*` or `copilot/*` patterns
+- **Workflow**: `.github/workflows/preview-deploy.yml`
+- **Deployment**: Downloadable artifacts for team review
+- **Purpose**: Isolated preview builds for testing Copilot-generated changes
+
+#### Branch Naming Convention
+Use these patterns for Copilot-related branches to trigger preview builds:
+- `copilot-feature-name`
+- `copilot/feature-name`
+- `copilot-fix-issue-123`
+- `copilot/ui-improvements`
+
+#### Accessing Preview Builds
+1. Push to a `copilot-*` branch
+2. GitHub Actions will build a preview deployment
+3. Download the artifact from the Actions tab
+4. Extract and serve locally: `python3 -m http.server 8080`
+5. Preview builds include a visual banner identifying them as previews
+
 ## Security & Privacy
 
 - **Local Storage Only**: All data stays on your device

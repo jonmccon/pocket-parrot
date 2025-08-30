@@ -1,0 +1,121 @@
+# Workflow for deploying preview builds of copilot branches
+name: Deploy preview for copilot branches
+
+on:
+  # Runs on pushes to any branch matching the copilot pattern
+  push:
+    branches: 
+      - "copilot-*"
+      - "copilot/*"
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# Sets permissions of the GITHUB_TOKEN to allow deployment
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  actions: write
+
+# Allow multiple concurrent preview deployments
+concurrency:
+  group: "preview-${{ github.ref_name }}"
+  cancel-in-progress: true
+
+jobs:
+  # Preview deploy job for copilot branches
+  preview-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: preview-${{ github.ref_name }}
+      url: ${{ steps.deployment.outputs.artifact-url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Create preview info
+        run: |
+          # Create a preview info file to identify this as a preview build
+          echo "Preview build for branch: ${{ github.ref_name }}" > preview-info.txt
+          echo "Commit: ${{ github.sha }}" >> preview-info.txt
+          echo "Built at: $(date)" >> preview-info.txt
+          
+          # Add a banner to index.html to indicate this is a preview
+          BRANCH_NAME="${{ github.ref_name }}"
+          COMMIT_SHA="${{ github.sha }}"
+          sed -i "s/<title>Pocket Parrot - Mobile Sensor Platform<\/title>/<title>🔍 [PREVIEW] Pocket Parrot - ${BRANCH_NAME}<\/title>/" index.html
+          
+          # Add preview banner to the HTML
+          sed -i "/<body[^>]*>/a\\
+          <div style=\"background: #fbbf24; color: #92400e; padding: 8px; text-align: center; font-weight: bold; position: sticky; top: 0; z-index: 1000;\">\\
+            🔍 PREVIEW BUILD - Branch: ${BRANCH_NAME} | Commit: ${COMMIT_SHA}\\
+          </div>" index.html
+
+      - name: Upload preview artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-${{ github.ref_name }}-${{ github.run_number }}
+          path: .
+          retention-days: 30
+
+      - name: Create deployment summary
+        run: |
+          echo "## 🔍 Preview Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Artifact:** \`preview-${{ github.ref_name }}-${{ github.run_number }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📥 How to Access Preview" >> $GITHUB_STEP_SUMMARY
+          echo "1. Go to the [Actions tab](../../actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+          echo "2. Download the artifact: \`preview-${{ github.ref_name }}-${{ github.run_number }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "3. Extract the files and serve them locally:" >> $GITHUB_STEP_SUMMARY
+          echo "   \`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "   cd extracted-folder" >> $GITHUB_STEP_SUMMARY
+          echo "   python3 -m http.server 8080" >> $GITHUB_STEP_SUMMARY
+          echo "   \`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "4. Open http://localhost:8080 in your browser" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ✨ Features" >> $GITHUB_STEP_SUMMARY
+          echo "- 🦜 Full Pocket Parrot functionality" >> $GITHUB_STEP_SUMMARY
+          echo "- 📱 Mobile sensor data capture" >> $GITHUB_STEP_SUMMARY
+          echo "- 📷 Camera & object detection" >> $GITHUB_STEP_SUMMARY
+          echo "- 🎤 Audio recording" >> $GITHUB_STEP_SUMMARY
+          echo "- 🗺️ Interactive mapping" >> $GITHUB_STEP_SUMMARY
+          echo "- 💾 Offline support" >> $GITHUB_STEP_SUMMARY
+
+      - name: Comment on PR if applicable
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/copilot')
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Find PR for this branch
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head: `${context.repo.owner}:${context.ref.replace('refs/heads/', '')}`,
+              state: 'open'
+            });
+            
+            if (prs.length > 0) {
+              const pr = prs[0];
+              const comment = `🔍 **Preview deployment ready!**
+              
+              **Branch:** \`${{ github.ref_name }}\`
+              **Artifact:** \`preview-${{ github.ref_name }}-${{ github.run_number }}\`
+              
+              ### 📥 Access Preview:
+              1. [Download artifact](../../actions/runs/${{ github.run_id }})
+              2. Extract and run: \`python3 -m http.server 8080\`
+              3. Open: http://localhost:8080
+              
+              The preview includes a banner identifying it as a preview build.`;
+              
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body: comment
+              });
+            }
