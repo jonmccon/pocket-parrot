@@ -44,7 +44,7 @@ jobs:
           # Add a banner to index.html to indicate this is a preview
           BRANCH_NAME="${{ github.ref_name }}"
           COMMIT_SHA="${{ github.sha }}"
-          sed -i "s/<title>Pocket Parrot - Mobile Sensor Platform<\/title>/<title>🔍 [PREVIEW] Pocket Parrot - ${BRANCH_NAME}<\/title>/" index.html
+          sed -i "s|<title>.*</title>|<title>🔍 [PREVIEW] Pocket Parrot - ${BRANCH_NAME}</title>|" index.html
           
           # Add preview banner to the HTML
           sed -i "/<body[^>]*>/a\\
