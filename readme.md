@@ -155,6 +155,44 @@ The app consists of:
 - `service-worker.js`: Offline support and caching
 - `fallback.css`: Backup styling when CDN unavailable
 
+## GitHub Actions Workflows
+
+The repository uses GitHub Actions for automated deployment:
+
+### 🚀 Production Deployment
+- **Trigger**: Pushes to `main` branch
+- **Workflow**: `.github/workflows/static.yml`
+- **Deployment**: GitHub Pages at https://jonmccon.github.io/pocket-parrot/
+- **Purpose**: Production deployment for stable releases
+
+### 🔍 Preview Deployments
+- **Trigger**: Pushes to branches matching `copilot-*` or `copilot/*` patterns
+- **Workflow**: `.github/workflows/preview-deploy.yml`
+- **Deployment**: GitHub Pages subdirectories with branch-specific URLs
+- **Purpose**: Isolated preview builds for testing Copilot-generated changes
+
+#### Branch Naming Convention
+Use these patterns for Copilot-related branches to trigger preview builds:
+- `copilot-feature-name`
+- `copilot/feature-name`
+- `copilot-fix-issue-123`
+- `copilot/ui-improvements`
+
+#### URL Structure
+- **Main site**: `https://jonmccon.github.io/pocket-parrot/` (root)
+- **Preview builds**: `https://jonmccon.github.io/pocket-parrot/branch-name/`
+  - Example: `copilot-fix-17` → `https://jonmccon.github.io/pocket-parrot/copilot-fix-17/`
+  - Example: `copilot/ui-updates` → `https://jonmccon.github.io/pocket-parrot/copilot-ui-updates/`
+
+#### Accessing Preview Builds
+1. Push to a `copilot-*` branch
+2. GitHub Actions will deploy a live preview to a subdirectory on GitHub Pages
+3. Access your preview directly at `https://jonmccon.github.io/pocket-parrot/branch-name/`
+4. Direct URLs are provided in PR comments and Action summaries
+5. Preview builds include a visual banner identifying them as previews
+6. Main site remains unchanged at the root URL
+7. No download or local setup required!
+
 ## Security & Privacy
 
 - **Local Storage Only**: All data stays on your device
