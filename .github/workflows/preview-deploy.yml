@@ -17,6 +17,7 @@ permissions:
   pages: write
   id-token: write
   actions: write
+  pull-requests: write
 
 # Allow multiple concurrent preview deployments
 concurrency:
