@@ -15,6 +15,7 @@ class PocketParrot {
         this.audioChunks = [];
         this.map = null;
         this.markers = [];
+        this.hasRequestedPermissions = false; // Track if permissions have been requested
         
         this.init();
     }
@@ -130,6 +131,7 @@ class PocketParrot {
      */
     async requestPermissions() {
         this.updateStatus('Requesting sensor permissions...');
+        this.hasRequestedPermissions = true; // Mark that permissions have been requested
         let permissionsGranted = 0;
         let permissionsTotal = 0;
         
@@ -879,6 +881,16 @@ class PocketParrot {
             const timestamp = new Date().toISOString();
             const dataPoint = {
                 timestamp,
+                captureMethod: 'modular_sensor_capture', // Indicates this was captured via the modular approach
+                modules: {
+                    permissionsRequested: this.hasRequestedPermissions || false,
+                    gpsEnabled: !!this.currentPosition,
+                    orientationEnabled: !!window.DeviceOrientationEvent,
+                    motionEnabled: !!window.DeviceMotionEvent,
+                    weatherEnabled: true,
+                    cameraEnabled: !document.getElementById('cameraPreview').classList.contains('hidden'),
+                    audioEnabled: this.audioChunks.length > 0
+                },
                 gps: null,
                 orientation: null,
                 motion: null,
@@ -975,8 +987,37 @@ class PocketParrot {
      */
     async findOutdoorActivities() {
         this.updateStatus('Finding outdoor activities...');
+        
+        // Save activity search record
+        await this.saveActivitySearch();
+        
         await this.updateActivityRecommendations();
         this.updateStatus('Activity search complete');
+    }
+
+    /**
+     * Save activity search record for export tracking
+     */
+    async saveActivitySearch() {
+        if (!this.currentPosition) return;
+        
+        const searchRecord = {
+            id: `search_${Date.now()}`,
+            type: 'activity_search',
+            timestamp: new Date().toISOString(),
+            location: {
+                latitude: this.currentPosition.coords.latitude,
+                longitude: this.currentPosition.coords.longitude
+            },
+            searchMethod: 'modular_activity_finder',
+            activityFilter: document.getElementById('activityFilter')?.value || 'all'
+        };
+        
+        try {
+            await this.saveOutdoorActivity(searchRecord);
+        } catch (error) {
+            console.log('Could not save activity search record:', error);
+        }
     }
 
     /**
@@ -1178,6 +1219,25 @@ class PocketParrot {
                 const data = request.result;
                 // Sort by timestamp in descending order (newest first)
                 data.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                resolve(data);
+            };
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    /**
+     * Get all outdoor activities from IndexedDB
+     */
+    async getAllOutdoorActivities() {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(['outdoorActivities'], 'readonly');
+            const store = transaction.objectStore('outdoorActivities');
+            const request = store.getAll();
+            
+            request.onsuccess = () => {
+                const data = request.result;
+                // Sort by id for consistent ordering
+                data.sort((a, b) => a.id - b.id);
                 resolve(data);
             };
             request.onerror = () => reject(request.error);
@@ -1751,15 +1811,20 @@ class PocketParrot {
     }
 
     /**
-     * Export all data as JSON
+     * Export all data as JSON with modular structure
      */
     async exportData() {
         try {
             this.updateStatus('Exporting data...');
-            const allData = await this.getAllData();
+            
+            // Get all sensor data
+            const sensorData = await this.getAllData();
+            
+            // Get all outdoor activities data
+            const outdoorActivities = await this.getAllOutdoorActivities();
             
             // Convert blobs to base64 for JSON export
-            const exportData = await Promise.all(allData.map(async point => {
+            const exportSensorData = await Promise.all(sensorData.map(async point => {
                 const exportPoint = { ...point };
                 
                 if (point.photoBlob) {
@@ -1775,6 +1840,33 @@ class PocketParrot {
                 return exportPoint;
             }));
             
+            // Create modular export structure
+            const exportData = {
+                exportInfo: {
+                    exportDate: new Date().toISOString(),
+                    appVersion: "Pocket Parrot v1.0",
+                    dataStructure: "modular",
+                    totalSensorRecords: exportSensorData.length,
+                    totalOutdoorActivities: outdoorActivities.length
+                },
+                sensorData: exportSensorData,
+                outdoorActivities: outdoorActivities,
+                modules: {
+                    permissions: {
+                        description: "Device sensor permission management",
+                        relatedData: ["sensorData"]
+                    },
+                    sensorCapture: {
+                        description: "GPS, orientation, motion, weather, camera, and audio data capture",
+                        relatedData: ["sensorData"]
+                    },
+                    activityFinder: {
+                        description: "Location-based outdoor activity recommendations",
+                        relatedData: ["outdoorActivities"]
+                    }
+                }
+            };
+            
             const jsonData = JSON.stringify(exportData, null, 2);
             const blob = new Blob([jsonData], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
@@ -1788,7 +1880,7 @@ class PocketParrot {
             document.body.removeChild(a);
             
             URL.revokeObjectURL(url);
-            this.updateStatus('Data exported successfully');
+            this.updateStatus(`Data exported successfully (${exportSensorData.length} sensor records, ${outdoorActivities.length} activities)`);
         } catch (error) {
             console.error('Error exporting data:', error);
             this.updateStatus('Export failed');
