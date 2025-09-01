@@ -87,8 +87,9 @@ class PocketParrot {
         document.getElementById('captureBtn').addEventListener('click', () => this.showPage('capture'));
         document.getElementById('viewBtn').addEventListener('click', () => this.showPage('viewer'));
         
-        // Capture controls
-        document.getElementById('captureNowBtn').addEventListener('click', () => this.captureDataPoint());
+        // Modular capture controls
+        document.getElementById('captureSensorDataBtn').addEventListener('click', () => this.captureSensorData());
+        document.getElementById('findActivitiesBtn').addEventListener('click', () => this.findOutdoorActivities());
         
         // Camera controls
         document.getElementById('startCameraBtn').addEventListener('click', () => this.startCamera());
@@ -247,9 +248,6 @@ class PocketParrot {
         document.getElementById('altitude').textContent = coords.altitude ? coords.altitude.toFixed(1) : '--';
         document.getElementById('speed').textContent = coords.speed ? coords.speed.toFixed(1) : '--';
         document.getElementById('accuracy').textContent = coords.accuracy.toFixed(1);
-        
-        // Update activity recommendations when location changes
-        this.updateActivityRecommendations();
     }
 
     /**
@@ -872,7 +870,117 @@ class PocketParrot {
     }
 
     /**
-     * Capture a complete data point
+     * Capture sensor data only (GPS, orientation, motion, weather, camera, audio)
+     */
+    async captureSensorData() {
+        try {
+            this.updateStatus('Capturing sensor data...');
+            
+            const timestamp = new Date().toISOString();
+            const dataPoint = {
+                timestamp,
+                gps: null,
+                orientation: null,
+                motion: null,
+                weather: null,
+                objectsDetected: [],
+                photoBlob: null,
+                audioBlob: null
+            };
+            
+            // Get current location and weather
+            if (this.currentPosition) {
+                const coords = this.currentPosition.coords;
+                dataPoint.gps = {
+                    latitude: coords.latitude,
+                    longitude: coords.longitude,
+                    altitude: coords.altitude,
+                    accuracy: coords.accuracy,
+                    speed: coords.speed,
+                    heading: coords.heading
+                };
+                
+                // Fetch weather data with GPS location
+                const weatherResult = await this.getWeatherWithFallback({
+                    latitude: coords.latitude,
+                    longitude: coords.longitude
+                });
+                dataPoint.weather = weatherResult;
+            } else {
+                // No GPS available, try IP-based weather fallback
+                const weatherResult = await this.getWeatherWithFallback(null);
+                dataPoint.weather = weatherResult;
+            }
+            
+            // Get orientation data
+            if (window.DeviceOrientationEvent) {
+                // We'll capture the last known orientation values
+                const alphaEl = document.getElementById('alpha');
+                const betaEl = document.getElementById('beta');
+                const gammaEl = document.getElementById('gamma');
+                
+                if (alphaEl.textContent !== '--') {
+                    dataPoint.orientation = {
+                        alpha: parseFloat(alphaEl.textContent),
+                        beta: parseFloat(betaEl.textContent),
+                        gamma: parseFloat(gammaEl.textContent)
+                    };
+                }
+            }
+            
+            // Get motion data
+            if (window.DeviceMotionEvent) {
+                const accelXEl = document.getElementById('accelX');
+                const accelYEl = document.getElementById('accelY');
+                const accelZEl = document.getElementById('accelZ');
+                
+                if (accelXEl.textContent !== '--') {
+                    dataPoint.motion = {
+                        accelerationX: parseFloat(accelXEl.textContent),
+                        accelerationY: parseFloat(accelYEl.textContent),
+                        accelerationZ: parseFloat(accelZEl.textContent)
+                    };
+                }
+            }
+            
+            // Get photo and object detection if camera is active
+            const video = document.getElementById('cameraPreview');
+            if (!video.classList.contains('hidden') && video.srcObject) {
+                const photoData = await this.takePhoto();
+                dataPoint.photoBlob = photoData.blob;
+                dataPoint.objectsDetected = photoData.detectedObjects;
+                dataPoint.colorPalette = photoData.colorPalette;
+            }
+            
+            // Get audio if recording
+            if (this.audioChunks.length > 0) {
+                dataPoint.audioBlob = new Blob(this.audioChunks, { type: 'audio/wav' });
+                this.audioChunks = []; // Clear for next recording
+            }
+            
+            // Save to IndexedDB
+            await this.saveDataPoint(dataPoint);
+            await this.updateRecordCount();
+            
+            this.updateStatus('Sensor data captured');
+            
+        } catch (error) {
+            console.error('Error capturing sensor data:', error);
+            this.updateStatus('Sensor capture failed');
+        }
+    }
+
+    /**
+     * Find and display outdoor activities (separated from sensor capture)
+     */
+    async findOutdoorActivities() {
+        this.updateStatus('Finding outdoor activities...');
+        await this.updateActivityRecommendations();
+        this.updateStatus('Activity search complete');
+    }
+
+    /**
+     * Capture a complete data point (legacy function - kept for backward compatibility)
      */
     async captureDataPoint() {
         try {
