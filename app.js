@@ -988,11 +988,55 @@ class PocketParrot {
     async findOutdoorActivities() {
         this.updateStatus('Finding outdoor activities...');
         
+        // Request location if not available
+        if (!this.currentPosition) {
+            this.updateStatus('Requesting location for activity recommendations...');
+            try {
+                await this.requestLocationForActivities();
+            } catch (error) {
+                console.log('Location request failed, showing activities without distance:', error);
+            }
+        }
+        
         // Save activity search record
         await this.saveActivitySearch();
         
         await this.updateActivityRecommendations();
         this.updateStatus('Activity search complete');
+    }
+
+    /**
+     * Request location specifically for activity recommendations
+     */
+    async requestLocationForActivities() {
+        return new Promise((resolve, reject) => {
+            if (!navigator.geolocation) {
+                reject(new Error('Geolocation not supported'));
+                return;
+            }
+
+            const timeoutId = setTimeout(() => {
+                reject(new Error('Location request timeout'));
+            }, 10000);
+
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    clearTimeout(timeoutId);
+                    this.updateLocationData(position);
+                    this.startLocationTracking();
+                    resolve(position);
+                },
+                (error) => {
+                    clearTimeout(timeoutId);
+                    reject(error);
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 8000,
+                    maximumAge: 300000 // 5 minutes
+                }
+            );
+        });
     }
 
     /**
@@ -1918,46 +1962,44 @@ class PocketParrot {
     async updateActivityRecommendations() {
         const recommendationsContainer = document.getElementById('activitiesRecommendations');
         
-        // Check if we have location data
-        if (!this.currentPosition) {
-            recommendationsContainer.innerHTML = `
-                <div class="text-sm text-gray-500 text-center py-4">
-                    📍 Location access needed for activity recommendations
-                </div>
-            `;
-            return;
-        }
-        
         // Show loading state
         recommendationsContainer.innerHTML = `
             <div class="text-sm text-gray-500 text-center py-4">
                 <div class="spinner mx-auto mb-2" style="width: 20px; height: 20px; border-width: 2px;"></div>
-                Finding nearby activities...
+                Finding activities...
             </div>
         `;
         
         try {
-            const coords = this.currentPosition.coords;
-            const activityFilter = document.getElementById('activityFilter').value;
+            let recommendations = [];
             
-            // Get current weather data for suitability assessment
-            let weatherData = null;
-            try {
-                weatherData = await this.getWeatherWithFallback({
-                    latitude: coords.latitude,
-                    longitude: coords.longitude
-                });
-            } catch (error) {
-                console.log('Could not get weather data for activity recommendations:', error);
+            if (this.currentPosition) {
+                // Location available - get nearby activities with distance/weather
+                const coords = this.currentPosition.coords;
+                const activityFilter = document.getElementById('activityFilter').value;
+                
+                // Get current weather data for suitability assessment
+                let weatherData = null;
+                try {
+                    weatherData = await this.getWeatherWithFallback({
+                        latitude: coords.latitude,
+                        longitude: coords.longitude
+                    });
+                } catch (error) {
+                    console.log('Could not get weather data for activity recommendations:', error);
+                }
+                
+                // Get recommendations with distance
+                recommendations = await this.getOutdoorActivityRecommendations(
+                    coords.latitude,
+                    coords.longitude,
+                    weatherData,
+                    activityFilter
+                );
+            } else {
+                // No location - show all activities without distance
+                recommendations = await this.getAllActivitiesWithoutDistance();
             }
-            
-            // Get recommendations
-            const recommendations = await this.getOutdoorActivityRecommendations(
-                coords.latitude,
-                coords.longitude,
-                weatherData,
-                activityFilter
-            );
             
             // Update UI with recommendations
             this.displayActivityRecommendations(recommendations);
@@ -2031,8 +2073,13 @@ class PocketParrot {
                     <p class="text-sm text-gray-600 mb-2">${activity.description}</p>
                     
                     <div class="grid grid-cols-2 gap-2 text-xs text-gray-500 mb-2">
-                        <div>📍 ${activity.distance} km away</div>
-                        <div>🕐 ${activity.travelTime} min drive</div>
+                        ${activity.distance !== null ? `
+                            <div>📍 ${activity.distance} km away</div>
+                            <div>🕐 ${activity.travelTime} min drive</div>
+                        ` : `
+                            <div>📍 Location needed for distance</div>
+                            <div>🕐 Unknown travel time</div>
+                        `}
                         <div>⏱️ ~${activity.estimatedDuration} min activity</div>
                         <div>📊 ${activity.difficulty} difficulty</div>
                     </div>
@@ -2055,6 +2102,39 @@ class PocketParrot {
         }).join('');
         
         container.innerHTML = recommendationsHTML;
+    }
+
+    /**
+     * Get all activities without distance calculations (fallback when no location)
+     */
+    async getAllActivitiesWithoutDistance() {
+        const allActivities = await this.getAllOutdoorActivities();
+        const activityFilter = document.getElementById('activityFilter').value;
+        
+        let filteredActivities = allActivities;
+        
+        // Filter by activity type if specified and exclude activity search records
+        if (activityFilter) {
+            filteredActivities = allActivities.filter(activity => 
+                activity.activityTypes && activity.activityTypes.includes(activityFilter)
+            );
+        } else {
+            // Exclude activity search records when showing all
+            filteredActivities = allActivities.filter(activity => 
+                activity.activityTypes && activity.type !== 'activity_search'
+            );
+        }
+        
+        // Add default values for missing location-based data
+        return filteredActivities.map(activity => ({
+            ...activity,
+            distance: null,
+            travelTime: null,
+            weatherSuitability: {
+                rating: 'unknown',
+                reason: 'Weather assessment requires location'
+            }
+        }));
     }
 
     /**
