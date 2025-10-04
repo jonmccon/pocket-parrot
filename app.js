@@ -565,7 +565,7 @@ class PocketParrot {
     async startCamera() {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'environment' }
+                video: { facingMode: 'user' } // Use front-facing camera for events
             });
             
             const video = document.getElementById('cameraPreview');

@@ -6,29 +6,94 @@
  * Handles multiple concurrent connections from different Pocket Parrot users
  * and ingests their sensor data in real-time.
  * 
+ * Features:
+ * - Rate limiting: Maximum 25 concurrent users
+ * - Dashboard monitoring endpoint at /dashboard
+ * - Real-time stats broadcasting
+ * - Oldest connection eviction when limit reached
+ * 
  * Usage:
  *   node multi-user-server.js [port]
  * 
  * Default port: 8080
+ * 
+ * Endpoints:
+ *   /pocket-parrot - Main data ingestion endpoint
+ *   /dashboard - Monitoring dashboard endpoint
  */
 
 const WebSocket = require('ws');
-const port = process.argv[2] || 8080;
+const http = require('http');
+const url = require('url');
+
+const port = process.env.PORT || process.argv[2] || 8080;
+const MAX_USERS = 25;
 
 // Store connected clients with metadata
 const clients = new Map();
+const dashboardClients = new Set();
 
-const wss = new WebSocket.Server({ port });
+// Statistics
+let totalDataPoints = 0;
+let dataPointsLastMinute = 0;
+let lastMinuteReset = Date.now();
+const serverStartTime = Date.now();
+
+// Create HTTP server
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Pocket Parrot WebSocket Server\n');
+});
+
+// Create WebSocket server
+const wss = new WebSocket.Server({ server });
 
 console.log('🦜 Multi-User Pocket Parrot WebSocket Server');
 console.log('='.repeat(50));
 console.log(`📡 Listening on port ${port}`);
-console.log(`🔗 Configure users to connect to: ws://YOUR_IP:${port}/pocket-parrot`);
+console.log(`🔗 Data endpoint: ws://YOUR_IP:${port}/pocket-parrot`);
+console.log(`📊 Dashboard endpoint: ws://YOUR_IP:${port}/dashboard`);
+console.log(`👥 Max users: ${MAX_USERS} (with auto-eviction)`);
 console.log('');
 console.log('Waiting for connections...');
 console.log('');
 
 wss.on('connection', (ws, req) => {
+  const pathname = url.parse(req.url).pathname;
+  
+  // Dashboard connection
+  if (pathname === '/dashboard') {
+    console.log('📊 Dashboard connected');
+    dashboardClients.add(ws);
+    
+    // Send initial stats
+    broadcastStats();
+    
+    ws.on('message', (message) => {
+      try {
+        const data = JSON.parse(message);
+        if (data.type === 'getStats') {
+          sendStatsToClient(ws);
+        }
+      } catch (error) {
+        console.error('Dashboard message error:', error);
+      }
+    });
+    
+    ws.on('close', () => {
+      console.log('📊 Dashboard disconnected');
+      dashboardClients.delete(ws);
+    });
+    
+    return;
+  }
+  
+  // Data connection - check rate limit
+  if (clients.size >= MAX_USERS) {
+    console.log(`⚠️  Rate limit reached (${MAX_USERS} users), evicting oldest connection`);
+    evictOldestClient();
+  }
+  
   // Generate unique client ID
   const clientId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   
@@ -44,8 +109,17 @@ wss.on('connection', (ws, req) => {
   
   console.log(`✅ New user connected: ${clientId}`);
   console.log(`   IP Address: ${req.socket.remoteAddress}`);
-  console.log(`   Total users online: ${clients.size}`);
+  console.log(`   Total users online: ${clients.size}/${MAX_USERS}`);
   console.log('');
+  
+  // Notify dashboards
+  broadcastToDashboards({
+    type: 'userConnected',
+    userId: clientId,
+    ip: req.socket.remoteAddress
+  });
+  
+  broadcastStats();
   
   ws.on('message', (message) => {
     try {
@@ -123,8 +197,21 @@ wss.on('connection', (ws, req) => {
         
         console.log('');
         
+        // Update statistics
+        totalDataPoints++;
+        dataPointsLastMinute++;
+        
         // Ingest the data into your application
         ingestData(clientId, data.data, client);
+        
+        // Notify dashboards
+        broadcastToDashboards({
+          type: 'dataReceived',
+          userId: clientId,
+          pointNumber: client.dataCount
+        });
+        
+        broadcastStats();
         
         // Send acknowledgment back to client
         ws.send(JSON.stringify({
@@ -136,6 +223,10 @@ wss.on('connection', (ws, req) => {
       }
     } catch (error) {
       console.error(`❌ Error from ${clientId}:`, error.message);
+      broadcastToDashboards({
+        type: 'error',
+        message: `Error from ${clientId}: ${error.message}`
+      });
     }
   });
   
@@ -147,10 +238,19 @@ wss.on('connection', (ws, req) => {
     console.log(`🔌 User disconnected: ${displayName}`);
     console.log(`   Session duration: ${duration}s`);
     console.log(`   Data points received: ${client.dataCount}`);
-    console.log(`   Total users online: ${clients.size - 1}`);
+    console.log(`   Total users online: ${clients.size - 1}/${MAX_USERS}`);
     console.log('');
     
     clients.delete(clientId);
+    
+    // Notify dashboards
+    broadcastToDashboards({
+      type: 'userDisconnected',
+      userId: clientId,
+      dataCount: client.dataCount
+    });
+    
+    broadcastStats();
   });
   
   ws.on('error', (error) => {
@@ -239,11 +339,109 @@ function ingestData(userId, sensorData, clientInfo) {
   */
 }
 
+/**
+ * Evict the oldest connected client to make room for a new one
+ */
+function evictOldestClient() {
+  let oldestClientId = null;
+  let oldestTime = Date.now();
+  
+  clients.forEach((client, id) => {
+    if (client.connectedAt < oldestTime) {
+      oldestTime = client.connectedAt;
+      oldestClientId = id;
+    }
+  });
+  
+  if (oldestClientId) {
+    const client = clients.get(oldestClientId);
+    console.log(`⚠️  Evicting oldest client: ${oldestClientId}`);
+    console.log(`   Connected: ${Math.round((Date.now() - client.connectedAt) / 1000)}s ago`);
+    console.log(`   Data points: ${client.dataCount}`);
+    
+    // Send notification to client
+    client.ws.send(JSON.stringify({
+      type: 'evicted',
+      message: 'Server capacity reached - disconnecting oldest connection'
+    }));
+    
+    client.ws.close();
+    clients.delete(oldestClientId);
+    console.log('');
+  }
+}
+
+/**
+ * Broadcast message to all dashboard clients
+ */
+function broadcastToDashboards(message) {
+  const messageStr = JSON.stringify(message);
+  dashboardClients.forEach(ws => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(messageStr);
+    }
+  });
+}
+
+/**
+ * Send stats to a specific client
+ */
+function sendStatsToClient(ws) {
+  const stats = getStats();
+  ws.send(JSON.stringify({
+    type: 'stats',
+    data: stats
+  }));
+}
+
+/**
+ * Broadcast stats to all dashboard clients
+ */
+function broadcastStats() {
+  const stats = getStats();
+  broadcastToDashboards({
+    type: 'stats',
+    data: stats
+  });
+}
+
+/**
+ * Get current server statistics
+ */
+function getStats() {
+  // Calculate data rate (points per minute)
+  const now = Date.now();
+  if (now - lastMinuteReset >= 60000) {
+    dataPointsLastMinute = 0;
+    lastMinuteReset = now;
+  }
+  
+  const users = [];
+  clients.forEach((client, id) => {
+    users.push({
+      id: id,
+      connectedAt: client.connectedAt.toISOString(),
+      dataCount: client.dataCount,
+      lastData: client.lastDataTime ? client.lastDataTime.toISOString() : null,
+      username: client.username
+    });
+  });
+  
+  return {
+    activeUsers: clients.size,
+    maxUsers: MAX_USERS,
+    totalDataPoints: totalDataPoints,
+    dataRate: dataPointsLastMinute,
+    uptime: Math.floor((Date.now() - serverStartTime) / 1000),
+    users: users
+  };
+}
+
 // Status reporting - prints server statistics every minute
 setInterval(() => {
   if (clients.size > 0) {
     console.log('📊 Server Status Report:');
-    console.log(`   Connected users: ${clients.size}`);
+    console.log(`   Connected users: ${clients.size}/${MAX_USERS}`);
     
     let totalData = 0;
     clients.forEach((client, id) => {
@@ -260,6 +458,11 @@ setInterval(() => {
   }
 }, 60000); // Every 60 seconds
 
+// Reset data rate counter every minute
+setInterval(() => {
+  dataPointsLastMinute = 0;
+}, 60000);
+
 // Error handling
 wss.on('error', (error) => {
   console.error('❌ Server error:', error.message);
@@ -268,7 +471,7 @@ wss.on('error', (error) => {
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\n🛑 Shutting down server...');
-  console.log(`   Disconnecting ${clients.size} users...`);
+  console.log(`   Disconnecting ${clients.size} users and ${dashboardClients.size} dashboards...`);
   
   clients.forEach((client, id) => {
     client.ws.send(JSON.stringify({
@@ -278,11 +481,18 @@ process.on('SIGINT', () => {
     client.ws.close();
   });
   
-  wss.close(() => {
+  dashboardClients.forEach(ws => {
+    ws.close();
+  });
+  
+  server.close(() => {
     console.log('✅ Server closed gracefully');
     process.exit(0);
   });
 });
 
-console.log('✨ Server is ready!');
-console.log('');
+// Start HTTP server
+server.listen(port, () => {
+  console.log('✨ Server is ready!');
+  console.log('');
+});

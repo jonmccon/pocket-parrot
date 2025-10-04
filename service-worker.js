@@ -3,10 +3,12 @@
  * Provides offline caching for static assets
  */
 
-const CACHE_NAME = 'pocket-parrot-v3';
+const CACHE_NAME = 'pocket-parrot-v4';
 const urlsToCache = [
   '/',
   '/index.html',
+  '/event.html',
+  '/dashboard.html',
   '/app.js',
   '/config.js',
   '/data-api.js',

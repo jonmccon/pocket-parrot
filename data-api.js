@@ -82,16 +82,62 @@ class PocketParrotDataAPI {
         const safe = { ...dataPoint };
         
         if (dataPoint.photoBlob) {
-            safe.photoBase64 = await this.app.blobToBase64(dataPoint.photoBlob);
+            // Downsample photo before converting to base64
+            safe.photoBase64 = await this.downsampleAndConvertPhoto(dataPoint.photoBlob);
             delete safe.photoBlob;
         }
         
-        if (dataPoint.audioBlob) {
-            safe.audioBase64 = await this.app.blobToBase64(dataPoint.audioBlob);
-            delete safe.audioBlob;
-        }
+        // Remove audio from transmission - not needed for events
+        delete safe.audioBlob;
         
         return safe;
+    }
+
+    /**
+     * Downsample photo to reduce size before transmission
+     * @param {Blob} photoBlob - Original photo blob
+     * @returns {Promise<string>} Base64 encoded downsampled photo
+     */
+    async downsampleAndConvertPhoto(photoBlob) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            const url = URL.createObjectURL(photoBlob);
+            
+            img.onload = () => {
+                // Create canvas for downsampling
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                
+                // Calculate new dimensions (max 800px width)
+                const maxWidth = 800;
+                let width = img.width;
+                let height = img.height;
+                
+                if (width > maxWidth) {
+                    height = (height * maxWidth) / width;
+                    width = maxWidth;
+                }
+                
+                canvas.width = width;
+                canvas.height = height;
+                
+                // Draw downsampled image
+                ctx.drawImage(img, 0, 0, width, height);
+                
+                // Convert to base64 with compression (0.7 quality for JPEG)
+                const base64 = canvas.toDataURL('image/jpeg', 0.7);
+                
+                URL.revokeObjectURL(url);
+                resolve(base64);
+            };
+            
+            img.onerror = () => {
+                URL.revokeObjectURL(url);
+                reject(new Error('Failed to load image for downsampling'));
+            };
+            
+            img.src = url;
+        });
     }
 
     /**

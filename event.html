@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Event - Pocket Parrot</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3b82f6',
+                        secondary: '#64748b'
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Fallback CSS -->
+    <link rel="stylesheet" href="fallback.css">
+    
+    <style>
+        body {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            min-height: 100vh;
+            color: #e2e8f0;
+        }
+        
+        .status-indicator {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+            transition: all 0.3s ease;
+        }
+        
+        .status-disconnected {
+            background-color: #ef4444;
+            box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+        }
+        
+        .status-connected {
+            background-color: #10b981;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        
+        .sensor-card {
+            background: rgba(30, 41, 59, 0.6);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(148, 163, 184, 0.1);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+        
+        .big-button {
+            font-size: 1.25rem;
+            padding: 1rem 2rem;
+            border-radius: 12px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 14px 0 rgba(0, 0, 0, 0.3);
+        }
+        
+        .big-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px 0 rgba(0, 0, 0, 0.4);
+        }
+        
+        .welcome-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(5px);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .welcome-card {
+            background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+            border: 2px solid #10b981;
+            border-radius: 16px;
+            padding: 2rem;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+    </style>
+</head>
+<body class="p-4">
+    <!-- Welcome Message -->
+    <div id="welcomeOverlay" class="welcome-overlay">
+        <div class="welcome-card text-center">
+            <h1 class="text-4xl font-bold mb-4">🦜 Welcome!</h1>
+            <h2 id="eventNameDisplay" class="text-2xl mb-4 text-green-400"></h2>
+            <p class="text-gray-300 mb-6" id="welcomeMessage">
+                Welcome to the event! Click "Start Event" to begin streaming your sensor data.
+            </p>
+            <button onclick="dismissWelcome()" class="big-button bg-green-600 hover:bg-green-700 text-white">
+                Let's Go! 🚀
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="max-w-2xl mx-auto">
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-bold mb-2">
+                🦜 <span id="eventTitle">Event</span>
+            </h1>
+            <div class="flex items-center justify-center mb-4">
+                <span id="statusIndicator" class="status-indicator status-disconnected"></span>
+                <span id="statusText" class="text-lg">Disconnected</span>
+            </div>
+            <div class="text-sm text-gray-400">
+                Records Captured: <span id="recordCount" class="font-bold text-white">0</span>
+            </div>
+        </div>
+
+        <!-- Main Action Button -->
+        <div class="text-center mb-8">
+            <button id="mainActionButton" onclick="handleMainAction()" 
+                    class="big-button bg-blue-600 hover:bg-blue-700 text-white w-full max-w-md">
+                🚀 Start Event
+            </button>
+        </div>
+
+        <!-- Simplified Sensor Display -->
+        <div id="sensorDisplay" style="display: none;">
+            <!-- GPS -->
+            <div class="sensor-card">
+                <h3 class="text-xl font-semibold mb-3 flex items-center">
+                    📍 GPS Location
+                </h3>
+                <div class="grid grid-cols-2 gap-2 text-sm">
+                    <div>Latitude: <span id="latitude" class="font-mono text-green-400">--</span></div>
+                    <div>Longitude: <span id="longitude" class="font-mono text-green-400">--</span></div>
+                    <div>Altitude: <span id="altitude" class="font-mono text-green-400">--</span> m</div>
+                    <div>Accuracy: <span id="accuracy" class="font-mono text-green-400">--</span> m</div>
+                </div>
+            </div>
+
+            <!-- Orientation -->
+            <div class="sensor-card">
+                <h3 class="text-xl font-semibold mb-3 flex items-center">
+                    🧭 Device Orientation
+                </h3>
+                <div class="grid grid-cols-2 gap-2 text-sm">
+                    <div>Alpha: <span id="alpha" class="font-mono text-blue-400">--</span>°</div>
+                    <div>Beta: <span id="beta" class="font-mono text-blue-400">--</span>°</div>
+                    <div>Gamma: <span id="gamma" class="font-mono text-blue-400">--</span>°</div>
+                    <div>Compass: <span id="compass" class="font-mono text-blue-400">--</span>°</div>
+                </div>
+            </div>
+
+            <!-- Motion -->
+            <div class="sensor-card">
+                <h3 class="text-xl font-semibold mb-3 flex items-center">
+                    🏃 Motion Sensors
+                </h3>
+                <div class="grid grid-cols-3 gap-2 text-sm">
+                    <div>X: <span id="accelX" class="font-mono text-yellow-400">--</span></div>
+                    <div>Y: <span id="accelY" class="font-mono text-yellow-400">--</span></div>
+                    <div>Z: <span id="accelZ" class="font-mono text-yellow-400">--</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Configuration Script -->
+    <script src="config.js"></script>
+    
+    <!-- Data Access API Script -->
+    <script src="data-api.js"></script>
+    
+    <!-- Event Page Script -->
+    <script>
+        let isCapturing = false;
+        let isConnected = false;
+        let recordCount = 0;
+        let captureInterval = null;
+        let dataAPI = null;
+        let currentPosition = null;
+        let permissionsGranted = false;
+
+        // Parse URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const eventName = urlParams.get('eventName') || urlParams.get('event') || 
+                         (typeof PocketParrotConfig !== 'undefined' ? PocketParrotConfig.EVENT_NAME : null) || 
+                         'Event';
+        const wsEndpoint = urlParams.get('ws') || urlParams.get('wsEndpoint') || 
+                          (typeof PocketParrotConfig !== 'undefined' ? PocketParrotConfig.WEBSOCKET_ENDPOINT : null);
+        const welcomeMsg = typeof PocketParrotConfig !== 'undefined' ? PocketParrotConfig.WELCOME_MESSAGE : 
+                          'Welcome to the event! Click "Start Event" to begin streaming your sensor data.';
+
+        // Update UI with event name
+        document.getElementById('eventTitle').textContent = eventName;
+        document.getElementById('eventNameDisplay').textContent = eventName;
+        document.getElementById('welcomeMessage').textContent = welcomeMsg;
+        document.title = `${eventName} - Pocket Parrot`;
+
+        function dismissWelcome() {
+            document.getElementById('welcomeOverlay').style.display = 'none';
+        }
+
+        async function handleMainAction() {
+            const button = document.getElementById('mainActionButton');
+            
+            if (!permissionsGranted) {
+                // Step 1: Request permissions
+                button.textContent = '⏳ Requesting Permissions...';
+                button.disabled = true;
+                
+                try {
+                    await requestPermissions();
+                    permissionsGranted = true;
+                    
+                    // Show sensor display
+                    document.getElementById('sensorDisplay').style.display = 'block';
+                    
+                    // Initialize sensors
+                    initializeSensors();
+                    
+                    // Connect to WebSocket if endpoint provided
+                    if (wsEndpoint) {
+                        await connectToServer();
+                    }
+                    
+                    button.textContent = '▶️ Start Capturing';
+                    button.className = 'big-button bg-green-600 hover:bg-green-700 text-white w-full max-w-md';
+                    button.disabled = false;
+                } catch (error) {
+                    console.error('Permission error:', error);
+                    button.textContent = '❌ Permission Denied - Retry';
+                    button.className = 'big-button bg-red-600 hover:bg-red-700 text-white w-full max-w-md';
+                    button.disabled = false;
+                }
+            } else if (!isCapturing) {
+                // Step 2: Start capturing
+                button.textContent = '⏸️ Stop Capturing';
+                button.className = 'big-button bg-red-600 hover:bg-red-700 text-white w-full max-w-md';
+                startCapturing();
+            } else {
+                // Step 3: Stop capturing
+                button.textContent = '▶️ Start Capturing';
+                button.className = 'big-button bg-green-600 hover:bg-green-700 text-white w-full max-w-md';
+                stopCapturing();
+            }
+        }
+
+        async function requestPermissions() {
+            // Request location
+            return new Promise((resolve, reject) => {
+                if ('geolocation' in navigator) {
+                    navigator.geolocation.getCurrentPosition(
+                        (position) => {
+                            console.log('✅ Location permission granted');
+                            currentPosition = position;
+                            resolve();
+                        },
+                        (error) => {
+                            console.warn('⚠️ Location permission denied:', error);
+                            // Continue anyway - not all sensors are required
+                            resolve();
+                        },
+                        { enableHighAccuracy: true }
+                    );
+                } else {
+                    resolve();
+                }
+            });
+        }
+
+        function initializeSensors() {
+            // Start location tracking
+            if ('geolocation' in navigator) {
+                navigator.geolocation.watchPosition(
+                    updateLocation,
+                    (error) => console.warn('Location error:', error),
+                    { enableHighAccuracy: true }
+                );
+            }
+
+            // Device orientation
+            if (typeof DeviceOrientationEvent !== 'undefined') {
+                window.addEventListener('deviceorientation', updateOrientation);
+            }
+
+            // Device motion
+            if (typeof DeviceMotionEvent !== 'undefined') {
+                window.addEventListener('devicemotion', updateMotion);
+            }
+        }
+
+        function updateLocation(position) {
+            currentPosition = position;
+            document.getElementById('latitude').textContent = position.coords.latitude.toFixed(6);
+            document.getElementById('longitude').textContent = position.coords.longitude.toFixed(6);
+            document.getElementById('altitude').textContent = (position.coords.altitude || 0).toFixed(1);
+            document.getElementById('accuracy').textContent = position.coords.accuracy.toFixed(1);
+        }
+
+        function updateOrientation(event) {
+            document.getElementById('alpha').textContent = (event.alpha || 0).toFixed(1);
+            document.getElementById('beta').textContent = (event.beta || 0).toFixed(1);
+            document.getElementById('gamma').textContent = (event.gamma || 0).toFixed(1);
+            
+            // Calculate compass heading
+            const compass = event.alpha ? (360 - event.alpha) % 360 : 0;
+            document.getElementById('compass').textContent = compass.toFixed(1);
+        }
+
+        function updateMotion(event) {
+            if (event.acceleration) {
+                document.getElementById('accelX').textContent = (event.acceleration.x || 0).toFixed(2);
+                document.getElementById('accelY').textContent = (event.acceleration.y || 0).toFixed(2);
+                document.getElementById('accelZ').textContent = (event.acceleration.z || 0).toFixed(2);
+            }
+        }
+
+        async function connectToServer() {
+            if (!wsEndpoint || !dataAPI) return;
+            
+            try {
+                dataAPI.configureWebSocket(wsEndpoint, {
+                    autoReconnect: true,
+                    reconnectDelay: 5000
+                });
+                
+                await dataAPI.enableWebSocket();
+                isConnected = true;
+                updateConnectionStatus();
+            } catch (error) {
+                console.error('Connection error:', error);
+            }
+        }
+
+        function updateConnectionStatus() {
+            const indicator = document.getElementById('statusIndicator');
+            const statusText = document.getElementById('statusText');
+            
+            if (isConnected) {
+                indicator.className = 'status-indicator status-connected';
+                statusText.textContent = 'Connected';
+            } else {
+                indicator.className = 'status-indicator status-disconnected';
+                statusText.textContent = 'Disconnected';
+            }
+        }
+
+        async function startCapturing() {
+            isCapturing = true;
+            
+            // Capture immediately
+            await captureDataPoint();
+            
+            // Then capture every 5 seconds
+            captureInterval = setInterval(captureDataPoint, 5000);
+        }
+
+        function stopCapturing() {
+            isCapturing = false;
+            if (captureInterval) {
+                clearInterval(captureInterval);
+                captureInterval = null;
+            }
+        }
+
+        async function captureDataPoint() {
+            if (!isCapturing) return;
+            
+            try {
+                const dataPoint = {
+                    id: Date.now(),
+                    timestamp: new Date().toISOString(),
+                    gps: currentPosition ? {
+                        latitude: currentPosition.coords.latitude,
+                        longitude: currentPosition.coords.longitude,
+                        altitude: currentPosition.coords.altitude,
+                        accuracy: currentPosition.coords.accuracy,
+                        speed: currentPosition.coords.speed,
+                        heading: currentPosition.coords.heading
+                    } : null,
+                    orientation: {
+                        alpha: parseFloat(document.getElementById('alpha').textContent) || 0,
+                        beta: parseFloat(document.getElementById('beta').textContent) || 0,
+                        gamma: parseFloat(document.getElementById('gamma').textContent) || 0,
+                        compass: parseFloat(document.getElementById('compass').textContent) || 0
+                    },
+                    motion: {
+                        accelerationX: parseFloat(document.getElementById('accelX').textContent) || 0,
+                        accelerationY: parseFloat(document.getElementById('accelY').textContent) || 0,
+                        accelerationZ: parseFloat(document.getElementById('accelZ').textContent) || 0
+                    }
+                };
+
+                // Send to server via WebSocket if connected
+                if (dataAPI && isConnected) {
+                    dataAPI.ws.send(JSON.stringify({
+                        type: 'data',
+                        timestamp: dataPoint.timestamp,
+                        data: dataPoint
+                    }));
+                }
+
+                // Update record count
+                recordCount++;
+                document.getElementById('recordCount').textContent = recordCount;
+                
+                console.log('📊 Data captured:', dataPoint);
+            } catch (error) {
+                console.error('Capture error:', error);
+            }
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            // Create minimal data API instance for WebSocket
+            if (typeof PocketParrotDataAPI !== 'undefined') {
+                dataAPI = new PocketParrotDataAPI({ db: null });
+            }
+            
+            // Auto-connect if configured
+            if (wsEndpoint && urlParams.get('autoEnable') === 'true') {
+                // Wait a moment for welcome to be dismissed
+                setTimeout(() => {
+                    if (document.getElementById('welcomeOverlay').style.display !== 'none') {
+                        dismissWelcome();
+                    }
+                }, 1000);
+            }
+        });
+    </script>
+</body>
+</html>
