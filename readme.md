@@ -66,9 +66,11 @@ https://jonmccon.github.io/pocket-parrot/
 ### 📡 Data Access API *(NEW)*
 - **JavaScript API**: Programmatic access to sensor data for same-origin integrations
 - **WebSocket Push**: Real-time data streaming to external servers
+- **Multi-User Support**: Multiple phones can stream to one server simultaneously
 - **Real-time Subscriptions**: Observer pattern for immediate data access
 - **Flexible Filtering**: Query by date, GPS, media, and more
 - **See [DATA_ACCESS_API.md](DATA_ACCESS_API.md) for complete documentation**
+- **See [MULTI_USER_GUIDE.md](MULTI_USER_GUIDE.md) for multi-user streaming setup**
 
 ## Technical Details
 

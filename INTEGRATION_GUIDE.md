@@ -4,6 +4,8 @@
 
 This guide will help you quickly integrate with Pocket Parrot's data access API to consume sensor data in your own applications.
 
+> **📱 Multi-User Streaming:** For instructions on setting up multiple phones to stream to one server, see [MULTI_USER_GUIDE.md](MULTI_USER_GUIDE.md)
+
 ## Choose Your Integration Method
 
 ### 1. JavaScript API (Same-Origin)
