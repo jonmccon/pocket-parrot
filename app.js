@@ -2031,7 +2031,7 @@ let app;
 let dataAPI;
 
 // Initialize app when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     app = new PocketParrot();
     // Make app globally available for onclick handlers
     window.app = app;
@@ -2042,5 +2042,146 @@ document.addEventListener('DOMContentLoaded', () => {
         dataAPI.loadConfiguration();
         window.pocketParrotAPI = dataAPI;
         console.log('📡 Data Access API initialized and available globally as window.pocketParrotAPI');
+        
+        // Apply configuration from config.js or URL parameters
+        await applyConfiguration();
     }
 });
+
+/**
+ * Apply configuration from config.js file and URL parameters
+ * URL parameters override config file settings
+ */
+async function applyConfiguration() {
+    const config = typeof PocketParrotConfig !== 'undefined' ? PocketParrotConfig : {};
+    const urlParams = new URLSearchParams(window.location.search);
+    
+    // Get WebSocket endpoint from URL parameter or config file
+    const wsEndpoint = urlParams.get('wsEndpoint') || urlParams.get('ws') || config.WEBSOCKET_ENDPOINT;
+    
+    // Get auto-enable setting from URL parameter or config file
+    const autoEnable = urlParams.has('autoEnable') 
+        ? urlParams.get('autoEnable') !== 'false'
+        : config.AUTO_ENABLE_WEBSOCKET;
+    
+    // Get event mode setting
+    const eventMode = urlParams.has('eventMode')
+        ? urlParams.get('eventMode') !== 'false'
+        : config.EVENT_MODE;
+    
+    // Get auto-start capture setting
+    const autoStartCapture = urlParams.has('autoStart')
+        ? urlParams.get('autoStart') !== 'false'
+        : config.AUTO_START_CAPTURE;
+    
+    // Get event name
+    const eventName = urlParams.get('eventName') || urlParams.get('event') || config.EVENT_NAME;
+    
+    console.log('📋 Configuration applied:', {
+        wsEndpoint,
+        autoEnable,
+        eventMode,
+        autoStartCapture,
+        eventName
+    });
+    
+    // Apply event mode styling
+    if (eventMode) {
+        applyEventMode(eventName);
+    }
+    
+    // Configure WebSocket if endpoint is provided
+    if (wsEndpoint && dataAPI) {
+        console.log(`🔌 Auto-configuring WebSocket: ${wsEndpoint}`);
+        dataAPI.configureWebSocket(wsEndpoint, {
+            autoReconnect: true,
+            reconnectDelay: 5000
+        });
+        
+        // Pre-fill the Settings page input if it exists
+        const wsInput = document.getElementById('wsEndpoint');
+        if (wsInput) {
+            wsInput.value = wsEndpoint;
+        }
+        
+        // Auto-enable WebSocket if configured
+        if (autoEnable) {
+            try {
+                await dataAPI.enableWebSocket();
+                console.log('✅ WebSocket auto-enabled');
+                
+                // Update UI
+                if (app && app.updateWebSocketButtonStates) {
+                    app.updateWebSocketButtonStates();
+                }
+                
+                // Show connection status to user
+                app.updateStatus('Connected to event server');
+            } catch (error) {
+                console.error('❌ Failed to auto-enable WebSocket:', error);
+                app.updateStatus('Failed to connect to server');
+            }
+        }
+    }
+    
+    // Show welcome message if configured
+    if (config.SHOW_WELCOME_MESSAGE && (eventName || config.WELCOME_MESSAGE)) {
+        showWelcomeMessage(config.WELCOME_MESSAGE, eventName);
+    }
+    
+    // Auto-start capture if configured
+    if (autoStartCapture) {
+        console.log('🚀 Auto-start capture enabled');
+        // This will be triggered after permissions are granted
+        window.autoStartCaptureEnabled = true;
+    }
+}
+
+/**
+ * Apply event mode styling and hide Settings button
+ */
+function applyEventMode(eventName) {
+    console.log('🎉 Event mode enabled');
+    
+    // Hide Settings button
+    const settingsBtn = document.getElementById('settingsBtn');
+    if (settingsBtn) {
+        settingsBtn.style.display = 'none';
+    }
+    
+    // Update page title if event name is provided
+    if (eventName) {
+        document.title = `${eventName} - Pocket Parrot`;
+        const titleElement = document.querySelector('h1');
+        if (titleElement) {
+            titleElement.textContent = `🦜 ${eventName}`;
+        }
+    }
+    
+    // Simplify UI for event experience
+    const statusDisplay = document.getElementById('statusDisplay');
+    if (statusDisplay) {
+        statusDisplay.classList.add('bg-green-900', 'border-green-800');
+    }
+}
+
+/**
+ * Show welcome message to event participants
+ */
+function showWelcomeMessage(message, eventName) {
+    const welcomeDiv = document.createElement('div');
+    welcomeDiv.id = 'welcomeMessage';
+    welcomeDiv.className = 'fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50';
+    welcomeDiv.innerHTML = `
+        <div class="bg-gray-800 p-8 rounded-lg border-2 border-green-600 max-w-md text-center">
+            <h2 class="text-3xl font-bold mb-4 text-green-400">🦜 Welcome!</h2>
+            ${eventName ? `<h3 class="text-xl mb-4 text-gray-200">${eventName}</h3>` : ''}
+            <p class="text-gray-300 mb-6">${message}</p>
+            <button onclick="document.getElementById('welcomeMessage').remove()" 
+                    class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-bold text-lg">
+                Let's Go! 🚀
+            </button>
+        </div>
+    `;
+    document.body.appendChild(welcomeDiv);
+}
