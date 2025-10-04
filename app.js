@@ -26,9 +26,6 @@ class PocketParrot {
         // Initialize IndexedDB
         await this.initDB();
         
-        // Initialize outdoor activities data
-        await this.initOutdoorActivitiesData();
-        
         // Set up event listeners
         this.setupEventListeners();
         
@@ -67,15 +64,6 @@ class PocketParrot {
                     store.createIndex('latitude', 'gps.latitude', { unique: false });
                     store.createIndex('longitude', 'gps.longitude', { unique: false });
                 }
-                
-                // Create outdoor activities data store
-                if (!db.objectStoreNames.contains('outdoorActivities')) {
-                    const activitiesStore = db.createObjectStore('outdoorActivities', { keyPath: 'id' });
-                    activitiesStore.createIndex('latitude', 'latitude', { unique: false });
-                    activitiesStore.createIndex('longitude', 'longitude', { unique: false });
-                    activitiesStore.createIndex('activityType', 'activityTypes', { unique: false, multiEntry: true });
-                    activitiesStore.createIndex('location', ['latitude', 'longitude'], { unique: false });
-                }
             };
         });
     }
@@ -90,7 +78,6 @@ class PocketParrot {
         
         // Modular capture controls
         document.getElementById('captureSensorDataBtn').addEventListener('click', () => this.captureSensorData());
-        document.getElementById('findActivitiesBtn').addEventListener('click', () => this.findOutdoorActivities());
         
         // Camera controls
         document.getElementById('startCameraBtn').addEventListener('click', () => this.startCamera());
@@ -109,9 +96,6 @@ class PocketParrot {
         // Filter changes
         document.getElementById('dateFilter').addEventListener('change', () => this.filterData());
         document.getElementById('objectFilter').addEventListener('change', () => this.filterData());
-        
-        // Activity filter changes
-        document.getElementById('activityFilter').addEventListener('change', () => this.updateActivityRecommendations());
         
         // Device orientation and motion
         if (typeof DeviceOrientationEvent !== 'undefined') {
@@ -983,44 +967,6 @@ class PocketParrot {
     }
 
     /**
-     * Find and display outdoor activities (separated from sensor capture)
-     */
-    async findOutdoorActivities() {
-        this.updateStatus('Finding outdoor activities...');
-        
-        // Save activity search record
-        await this.saveActivitySearch();
-        
-        await this.updateActivityRecommendations();
-        this.updateStatus('Activity search complete');
-    }
-
-    /**
-     * Save activity search record for export tracking
-     */
-    async saveActivitySearch() {
-        if (!this.currentPosition) return;
-        
-        const searchRecord = {
-            id: `search_${Date.now()}`,
-            type: 'activity_search',
-            timestamp: new Date().toISOString(),
-            location: {
-                latitude: this.currentPosition.coords.latitude,
-                longitude: this.currentPosition.coords.longitude
-            },
-            searchMethod: 'modular_activity_finder',
-            activityFilter: document.getElementById('activityFilter')?.value || 'all'
-        };
-        
-        try {
-            await this.saveOutdoorActivity(searchRecord);
-        } catch (error) {
-            console.log('Could not save activity search record:', error);
-        }
-    }
-
-    /**
      * Capture a complete data point (legacy function - kept for backward compatibility)
      */
     async captureDataPoint() {
@@ -1219,25 +1165,6 @@ class PocketParrot {
                 const data = request.result;
                 // Sort by timestamp in descending order (newest first)
                 data.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-                resolve(data);
-            };
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    /**
-     * Get all outdoor activities from IndexedDB
-     */
-    async getAllOutdoorActivities() {
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction(['outdoorActivities'], 'readonly');
-            const store = transaction.objectStore('outdoorActivities');
-            const request = store.getAll();
-            
-            request.onsuccess = () => {
-                const data = request.result;
-                // Sort by id for consistent ordering
-                data.sort((a, b) => a.id - b.id);
                 resolve(data);
             };
             request.onerror = () => reject(request.error);
@@ -1820,9 +1747,6 @@ class PocketParrot {
             // Get all sensor data
             const sensorData = await this.getAllData();
             
-            // Get all outdoor activities data
-            const outdoorActivities = await this.getAllOutdoorActivities();
-            
             // Convert blobs to base64 for JSON export
             const exportSensorData = await Promise.all(sensorData.map(async point => {
                 const exportPoint = { ...point };
@@ -1840,17 +1764,15 @@ class PocketParrot {
                 return exportPoint;
             }));
             
-            // Create modular export structure
+            // Create export structure
             const exportData = {
                 exportInfo: {
                     exportDate: new Date().toISOString(),
                     appVersion: "Pocket Parrot v1.0",
                     dataStructure: "modular",
-                    totalSensorRecords: exportSensorData.length,
-                    totalOutdoorActivities: outdoorActivities.length
+                    totalSensorRecords: exportSensorData.length
                 },
                 sensorData: exportSensorData,
-                outdoorActivities: outdoorActivities,
                 modules: {
                     permissions: {
                         description: "Device sensor permission management",
@@ -1859,10 +1781,6 @@ class PocketParrot {
                     sensorCapture: {
                         description: "GPS, orientation, motion, weather, camera, and audio data capture",
                         relatedData: ["sensorData"]
-                    },
-                    activityFinder: {
-                        description: "Location-based outdoor activity recommendations",
-                        relatedData: ["outdoorActivities"]
                     }
                 }
             };
@@ -1880,7 +1798,7 @@ class PocketParrot {
             document.body.removeChild(a);
             
             URL.revokeObjectURL(url);
-            this.updateStatus(`Data exported successfully (${exportSensorData.length} sensor records, ${outdoorActivities.length} activities)`);
+            this.updateStatus(`Data exported successfully (${exportSensorData.length} sensor records)`);
         } catch (error) {
             console.error('Error exporting data:', error);
             this.updateStatus('Export failed');
@@ -1909,548 +1827,6 @@ class PocketParrot {
             } catch (error) {
                 console.log('Service Worker registration failed:', error);
             }
-        }
-    }
-
-    /**
-     * Update outdoor activity recommendations
-     */
-    async updateActivityRecommendations() {
-        const recommendationsContainer = document.getElementById('activitiesRecommendations');
-        
-        // Check if we have location data
-        if (!this.currentPosition) {
-            recommendationsContainer.innerHTML = `
-                <div class="text-sm text-gray-500 text-center py-4">
-                    📍 Location access needed for activity recommendations
-                </div>
-            `;
-            return;
-        }
-        
-        // Show loading state
-        recommendationsContainer.innerHTML = `
-            <div class="text-sm text-gray-500 text-center py-4">
-                <div class="spinner mx-auto mb-2" style="width: 20px; height: 20px; border-width: 2px;"></div>
-                Finding nearby activities...
-            </div>
-        `;
-        
-        try {
-            const coords = this.currentPosition.coords;
-            const activityFilter = document.getElementById('activityFilter').value;
-            
-            // Get current weather data for suitability assessment
-            let weatherData = null;
-            try {
-                weatherData = await this.getWeatherWithFallback({
-                    latitude: coords.latitude,
-                    longitude: coords.longitude
-                });
-            } catch (error) {
-                console.log('Could not get weather data for activity recommendations:', error);
-            }
-            
-            // Get recommendations
-            const recommendations = await this.getOutdoorActivityRecommendations(
-                coords.latitude,
-                coords.longitude,
-                weatherData,
-                activityFilter
-            );
-            
-            // Update UI with recommendations
-            this.displayActivityRecommendations(recommendations);
-            
-        } catch (error) {
-            console.error('Error updating activity recommendations:', error);
-            recommendationsContainer.innerHTML = `
-                <div class="text-sm text-red-500 text-center py-4">
-                    ⚠️ Error loading activity recommendations
-                </div>
-            `;
-        }
-    }
-
-    /**
-     * Display activity recommendations in the UI
-     */
-    displayActivityRecommendations(recommendations) {
-        const container = document.getElementById('activitiesRecommendations');
-        
-        if (recommendations.length === 0) {
-            container.innerHTML = `
-                <div class="text-sm text-gray-500 text-center py-4">
-                    🔍 No nearby outdoor activities found within 60 minutes
-                </div>
-            `;
-            return;
-        }
-        
-        const recommendationsHTML = recommendations.map(activity => {
-            const suitability = activity.weatherSuitability;
-            const suitabilityColor = {
-                'high': 'text-green-600 bg-green-100',
-                'medium': 'text-yellow-600 bg-yellow-100',
-                'low': 'text-red-600 bg-red-100',
-                'unknown': 'text-gray-600 bg-gray-100'
-            }[suitability.rating] || 'text-gray-600 bg-gray-100';
-            
-            const activityIcons = {
-                'hiking': '🥾',
-                'mountain_biking': '🚵',
-                'fishing': '🎣',
-                'sailing': '⛵',
-                'climbing': '🧗',
-                'cycling': '🚴',
-                'picnic': '🧺',
-                'walking': '🚶',
-                'sports': '⚽',
-                'photography': '📷',
-                'nature_walking': '🌿',
-                'bouldering': '🪨',
-                'kayaking': '🛶',
-                'trail_running': '🏃'
-            };
-            
-            const primaryActivity = activity.activityTypes[0];
-            const icon = activityIcons[primaryActivity] || '🏞️';
-            
-            return `
-                <div class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                    <div class="flex items-start justify-between mb-2">
-                        <div class="flex items-center gap-2">
-                            <span class="text-lg">${icon}</span>
-                            <h4 class="font-semibold text-gray-800">${activity.name}</h4>
-                        </div>
-                        <span class="px-2 py-1 rounded-full text-xs font-medium ${suitabilityColor}">
-                            ${suitability.rating.toUpperCase()}
-                        </span>
-                    </div>
-                    
-                    <p class="text-sm text-gray-600 mb-2">${activity.description}</p>
-                    
-                    <div class="grid grid-cols-2 gap-2 text-xs text-gray-500 mb-2">
-                        <div>📍 ${activity.distance} km away</div>
-                        <div>🕐 ${activity.travelTime} min drive</div>
-                        <div>⏱️ ~${activity.estimatedDuration} min activity</div>
-                        <div>📊 ${activity.difficulty} difficulty</div>
-                    </div>
-                    
-                    <div class="text-xs text-gray-500 mb-2">
-                        <strong>Activities:</strong> ${activity.activityTypes.join(', ')}
-                    </div>
-                    
-                    ${suitability.reason !== 'good conditions' ? `
-                        <div class="text-xs ${suitability.rating === 'low' ? 'text-red-600' : 'text-yellow-600'}">
-                            ⚠️ ${suitability.reason}
-                        </div>
-                    ` : `
-                        <div class="text-xs text-green-600">
-                            ✅ Good weather conditions
-                        </div>
-                    `}
-                </div>
-            `;
-        }).join('');
-        
-        container.innerHTML = recommendationsHTML;
-    }
-
-    /**
-     * Initialize outdoor activities data if not already present
-     */
-    async initOutdoorActivitiesData() {
-        try {
-            const existingCount = await this.getOutdoorActivitiesCount();
-            if (existingCount > 0) {
-                console.log(`✅ Outdoor activities data already initialized (${existingCount} activities)`);
-                return;
-            }
-
-            console.log('🌲 Initializing outdoor activities data...');
-            await this.loadSampleOutdoorActivitiesData();
-            const finalCount = await this.getOutdoorActivitiesCount();
-            console.log(`✅ Initialized ${finalCount} outdoor activities`);
-        } catch (error) {
-            console.error('Error initializing outdoor activities data:', error);
-        }
-    }
-
-    /**
-     * Get count of outdoor activities in database
-     */
-    async getOutdoorActivitiesCount() {
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction(['outdoorActivities'], 'readonly');
-            const store = transaction.objectStore('outdoorActivities');
-            const request = store.count();
-            
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    /**
-     * Load sample outdoor activities data
-     */
-    async loadSampleOutdoorActivitiesData() {
-        const sampleActivities = [
-            {
-                id: 'mountain_view_trail',
-                name: 'Mountain View Trail',
-                latitude: 37.3861,
-                longitude: -122.0839,
-                activityTypes: ['hiking', 'trail_running'],
-                description: 'Scenic hiking trail with panoramic views',
-                difficulty: 'moderate',
-                estimatedDuration: 120, // minutes
-                popularTimes: ['morning', 'evening']
-            },
-            {
-                id: 'bay_area_bike_path',
-                name: 'Bay Area Bike Path',
-                latitude: 37.3849,
-                longitude: -122.0732,
-                activityTypes: ['mountain_biking', 'cycling'],
-                description: 'Multi-use trail perfect for biking',
-                difficulty: 'easy',
-                estimatedDuration: 90,
-                popularTimes: ['morning', 'afternoon']
-            },
-            {
-                id: 'crystal_lake',
-                name: 'Crystal Lake',
-                latitude: 37.3912,
-                longitude: -122.0963,
-                activityTypes: ['fishing', 'kayaking', 'sailing'],
-                description: 'Peaceful lake with good fishing and boating',
-                difficulty: 'easy',
-                estimatedDuration: 180,
-                popularTimes: ['morning', 'evening']
-            },
-            {
-                id: 'summit_climbing_area',
-                name: 'Summit Climbing Area',
-                latitude: 37.3756,
-                longitude: -122.0645,
-                activityTypes: ['climbing', 'bouldering'],
-                description: 'Rock climbing with various difficulty routes',
-                difficulty: 'hard',
-                estimatedDuration: 240,
-                popularTimes: ['morning', 'afternoon']
-            },
-            {
-                id: 'riverside_park',
-                name: 'Riverside Park',
-                latitude: 37.3889,
-                longitude: -122.0831,
-                activityTypes: ['picnic', 'walking', 'sports'],
-                description: 'Large park with sports fields and picnic areas',
-                difficulty: 'easy',
-                estimatedDuration: 120,
-                popularTimes: ['morning', 'afternoon', 'evening']
-            },
-            {
-                id: 'coastal_trail',
-                name: 'Coastal Trail',
-                latitude: 37.3945,
-                longitude: -122.1089,
-                activityTypes: ['hiking', 'photography'],
-                description: 'Coastal trail with ocean views and wildlife',
-                difficulty: 'moderate',
-                estimatedDuration: 150,
-                popularTimes: ['morning', 'evening']
-            }
-        ];
-
-        // Add more diverse geographic locations for better testing
-        const additionalActivities = [
-            {
-                id: 'redwood_grove',
-                name: 'Redwood Grove Trail',
-                latitude: 37.4419,
-                longitude: -122.1430,
-                activityTypes: ['hiking', 'nature_walking'],
-                description: 'Ancient redwood forest trail',
-                difficulty: 'easy',
-                estimatedDuration: 90,
-                popularTimes: ['morning', 'afternoon']
-            },
-            {
-                id: 'windy_hill_bike',
-                name: 'Windy Hill Mountain Bike Trail',
-                latitude: 37.3783,
-                longitude: -122.2267,
-                activityTypes: ['mountain_biking'],
-                description: 'Challenging mountain bike trail with elevation',
-                difficulty: 'hard',
-                estimatedDuration: 180,
-                popularTimes: ['morning']
-            },
-            {
-                id: 'pacific_fishing_pier',
-                name: 'Pacific Fishing Pier',
-                latitude: 37.4935,
-                longitude: -122.4814,
-                activityTypes: ['fishing'],
-                description: 'Popular ocean fishing pier',
-                difficulty: 'easy',
-                estimatedDuration: 240,
-                popularTimes: ['morning', 'evening']
-            }
-        ];
-
-        const allActivities = [...sampleActivities, ...additionalActivities];
-
-        for (const activity of allActivities) {
-            await this.saveOutdoorActivity(activity);
-        }
-    }
-
-    /**
-     * Save outdoor activity to database
-     */
-    async saveOutdoorActivity(activity) {
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction(['outdoorActivities'], 'readwrite');
-            const store = transaction.objectStore('outdoorActivities');
-            const request = store.put(activity);
-            
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    /**
-     * Calculate distance between two coordinates in kilometers using Haversine formula
-     */
-    calculateDistance(lat1, lon1, lat2, lon2) {
-        const R = 6371; // Earth's radius in kilometers
-        const dLat = this.toRadians(lat2 - lat1);
-        const dLon = this.toRadians(lon2 - lon1);
-        const a = 
-            Math.sin(dLat/2) * Math.sin(dLat/2) +
-            Math.cos(this.toRadians(lat1)) * Math.cos(this.toRadians(lat2)) * 
-            Math.sin(dLon/2) * Math.sin(dLon/2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-        return R * c;
-    }
-
-    /**
-     * Convert degrees to radians
-     */
-    toRadians(degrees) {
-        return degrees * (Math.PI / 180);
-    }
-
-    /**
-     * Estimate travel time based on distance (simplified)
-     */
-    estimateTravelTime(distanceKm) {
-        // Assume average speed of 50 km/h for driving
-        const averageSpeed = 50;
-        return Math.round((distanceKm / averageSpeed) * 60); // Return minutes
-    }
-
-    /**
-     * Get weather suitability for activity type
-     */
-    getWeatherSuitability(weatherData, activityType) {
-        if (!weatherData || !weatherData.data) {
-            return { rating: 'unknown', reason: 'No weather data available' };
-        }
-
-        const weather = weatherData.data;
-        const temp = weather.temperature;
-        const windSpeed = weather.windSpeed;
-        const precipitation = weather.precipitation || 0;
-        const conditions = this.getWeatherDescription(weather.weatherCode);
-
-        // Activity-specific weather requirements
-        const activityRequirements = {
-            hiking: {
-                idealTempRange: [10, 25],
-                maxWind: 25,
-                maxPrecipitation: 2
-            },
-            mountain_biking: {
-                idealTempRange: [5, 30],
-                maxWind: 30,
-                maxPrecipitation: 1
-            },
-            fishing: {
-                idealTempRange: [5, 35],
-                maxWind: 20,
-                maxPrecipitation: 5
-            },
-            sailing: {
-                idealTempRange: [10, 30],
-                minWind: 8,
-                maxWind: 25,
-                maxPrecipitation: 1
-            },
-            climbing: {
-                idealTempRange: [5, 25],
-                maxWind: 20,
-                maxPrecipitation: 0.5
-            },
-            default: {
-                idealTempRange: [10, 25],
-                maxWind: 25,
-                maxPrecipitation: 2
-            }
-        };
-
-        const requirements = activityRequirements[activityType] || activityRequirements.default;
-        let score = 0;
-        let reasons = [];
-
-        // Temperature check
-        if (temp >= requirements.idealTempRange[0] && temp <= requirements.idealTempRange[1]) {
-            score += 40;
-        } else {
-            const tempDiff = Math.min(
-                Math.abs(temp - requirements.idealTempRange[0]),
-                Math.abs(temp - requirements.idealTempRange[1])
-            );
-            score += Math.max(0, 40 - tempDiff * 2);
-            if (temp < requirements.idealTempRange[0]) {
-                reasons.push('cooler than ideal');
-            } else {
-                reasons.push('warmer than ideal');
-            }
-        }
-
-        // Wind check
-        if (activityType === 'sailing') {
-            if (windSpeed >= requirements.minWind && windSpeed <= requirements.maxWind) {
-                score += 30;
-            } else if (windSpeed < requirements.minWind) {
-                score += Math.max(0, 30 - (requirements.minWind - windSpeed) * 3);
-                reasons.push('not enough wind');
-            } else {
-                score += Math.max(0, 30 - (windSpeed - requirements.maxWind) * 2);
-                reasons.push('too windy');
-            }
-        } else {
-            if (windSpeed <= requirements.maxWind) {
-                score += 30;
-            } else {
-                score += Math.max(0, 30 - (windSpeed - requirements.maxWind) * 2);
-                reasons.push('too windy');
-            }
-        }
-
-        // Precipitation check
-        if (precipitation <= requirements.maxPrecipitation) {
-            score += 30;
-        } else {
-            score += Math.max(0, 30 - (precipitation - requirements.maxPrecipitation) * 10);
-            reasons.push('rain expected');
-        }
-
-        // Determine rating
-        let rating;
-        if (score >= 80) {
-            rating = 'high';
-        } else if (score >= 50) {
-            rating = 'medium';
-        } else {
-            rating = 'low';
-        }
-
-        return {
-            rating,
-            score,
-            reason: reasons.length > 0 ? reasons.join(', ') : 'good conditions',
-            details: {
-                temperature: temp,
-                windSpeed,
-                precipitation,
-                conditions
-            }
-        };
-    }
-
-    /**
-     * Find nearby outdoor activities
-     */
-    async findNearbyActivities(latitude, longitude, maxDistanceKm = 50) {
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction(['outdoorActivities'], 'readonly');
-            const store = transaction.objectStore('outdoorActivities');
-            const request = store.getAll();
-            
-            request.onsuccess = () => {
-                const allActivities = request.result;
-                const nearbyActivities = allActivities
-                    .map(activity => {
-                        const distance = this.calculateDistance(
-                            latitude, longitude,
-                            activity.latitude, activity.longitude
-                        );
-                        const travelTime = this.estimateTravelTime(distance);
-                        
-                        return {
-                            ...activity,
-                            distance: Math.round(distance * 10) / 10, // Round to 1 decimal
-                            travelTime
-                        };
-                    })
-                    .filter(activity => activity.distance <= maxDistanceKm)
-                    .sort((a, b) => a.distance - b.distance);
-                
-                resolve(nearbyActivities);
-            };
-            
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    /**
-     * Get outdoor activity recommendations
-     */
-    async getOutdoorActivityRecommendations(latitude, longitude, weatherData, activityFilter = null) {
-        try {
-            // Find nearby activities
-            const nearbyActivities = await this.findNearbyActivities(latitude, longitude);
-            
-            // Filter by activity type if specified
-            let filteredActivities = nearbyActivities;
-            if (activityFilter) {
-                filteredActivities = nearbyActivities.filter(activity => 
-                    activity.activityTypes.includes(activityFilter)
-                );
-            }
-            
-            // Only consider activities within 60 minutes travel time
-            filteredActivities = filteredActivities.filter(activity => activity.travelTime <= 60);
-            
-            // Calculate weather suitability for each activity
-            const activitiesWithSuitability = filteredActivities.map(activity => {
-                // Use the primary activity type for weather assessment
-                const primaryActivity = activity.activityTypes[0];
-                const suitability = this.getWeatherSuitability(weatherData, primaryActivity);
-                
-                return {
-                    ...activity,
-                    weatherSuitability: suitability
-                };
-            });
-            
-            // Sort by a combination of distance and weather suitability
-            activitiesWithSuitability.sort((a, b) => {
-                const aScore = (a.weatherSuitability.score || 0) - (a.distance * 2);
-                const bScore = (b.weatherSuitability.score || 0) - (b.distance * 2);
-                return bScore - aScore;
-            });
-            
-            // Return top 3 recommendations
-            return activitiesWithSuitability.slice(0, 3);
-        } catch (error) {
-            console.error('Error getting activity recommendations:', error);
-            return [];
         }
     }
 }
