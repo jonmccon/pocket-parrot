@@ -75,6 +75,7 @@ class PocketParrot {
         // Navigation
         document.getElementById('captureBtn').addEventListener('click', () => this.showPage('capture'));
         document.getElementById('viewBtn').addEventListener('click', () => this.showPage('viewer'));
+        document.getElementById('settingsBtn').addEventListener('click', () => this.showPage('settings'));
         
         // Modular capture controls
         document.getElementById('captureSensorDataBtn').addEventListener('click', () => this.captureSensorData());
@@ -96,6 +97,13 @@ class PocketParrot {
         // Filter changes
         document.getElementById('dateFilter').addEventListener('change', () => this.filterData());
         document.getElementById('objectFilter').addEventListener('change', () => this.filterData());
+        
+        // Settings controls
+        document.getElementById('saveWsConfigBtn').addEventListener('click', () => this.saveWebSocketConfig());
+        document.getElementById('enableWsBtn').addEventListener('click', () => this.enableWebSocket());
+        document.getElementById('disableWsBtn').addEventListener('click', () => this.disableWebSocket());
+        document.getElementById('testWsBtn').addEventListener('click', () => this.testWebSocketConnection());
+        document.getElementById('refreshStatusBtn').addEventListener('click', () => this.refreshAPIStatus());
         
         // Device orientation and motion
         if (typeof DeviceOrientationEvent !== 'undefined') {
@@ -219,6 +227,8 @@ class PocketParrot {
         // Initialize page-specific functionality
         if (pageName === 'viewer') {
             this.initViewer();
+        } else if (pageName === 'settings') {
+            this.initSettings();
         }
     }
 
@@ -1829,14 +1839,209 @@ class PocketParrot {
             }
         }
     }
+
+    /**
+     * Initialize settings page
+     */
+    initSettings() {
+        // Load current WebSocket configuration
+        const savedEndpoint = localStorage.getItem('pocketParrot_wsEndpoint');
+        if (savedEndpoint) {
+            document.getElementById('wsEndpoint').value = savedEndpoint;
+        }
+        
+        // Update API status
+        this.refreshAPIStatus();
+        
+        // Update button states
+        this.updateWebSocketButtonStates();
+    }
+
+    /**
+     * Save WebSocket configuration
+     */
+    saveWebSocketConfig() {
+        const endpoint = document.getElementById('wsEndpoint').value.trim();
+        
+        if (!endpoint) {
+            alert('Please enter a WebSocket endpoint');
+            return;
+        }
+        
+        if (!endpoint.startsWith('ws://') && !endpoint.startsWith('wss://')) {
+            alert('WebSocket endpoint must start with ws:// or wss://');
+            return;
+        }
+        
+        try {
+            if (window.pocketParrotAPI) {
+                window.pocketParrotAPI.configureWebSocket(endpoint);
+                this.updateStatus('WebSocket configuration saved');
+                
+                // Show status
+                document.getElementById('wsStatus').classList.remove('hidden');
+                document.getElementById('wsStatusText').textContent = `Configured: ${endpoint}`;
+            }
+        } catch (error) {
+            console.error('Error saving WebSocket config:', error);
+            alert('Failed to save configuration: ' + error.message);
+        }
+    }
+
+    /**
+     * Enable WebSocket
+     */
+    async enableWebSocket() {
+        try {
+            if (window.pocketParrotAPI) {
+                await window.pocketParrotAPI.enableWebSocket();
+                this.updateStatus('WebSocket enabled');
+                this.updateWebSocketButtonStates();
+                this.refreshAPIStatus();
+                
+                // Update status display
+                document.getElementById('wsStatus').classList.remove('hidden');
+                document.getElementById('wsStatusText').textContent = 'Connecting...';
+                
+                // Check connection after a delay
+                setTimeout(() => {
+                    const status = window.pocketParrotAPI.getStatus();
+                    if (status.wsConnections > 0) {
+                        document.getElementById('wsStatusText').textContent = `✅ Connected (${status.wsConnections} connection${status.wsConnections > 1 ? 's' : ''})`;
+                        document.getElementById('wsStatusText').className = 'text-green-400';
+                    } else {
+                        document.getElementById('wsStatusText').textContent = '⚠️ Connection failed - check endpoint and try again';
+                        document.getElementById('wsStatusText').className = 'text-yellow-400';
+                    }
+                }, 2000);
+            }
+        } catch (error) {
+            console.error('Error enabling WebSocket:', error);
+            alert('Failed to enable WebSocket: ' + error.message);
+        }
+    }
+
+    /**
+     * Disable WebSocket
+     */
+    disableWebSocket() {
+        try {
+            if (window.pocketParrotAPI) {
+                window.pocketParrotAPI.disableWebSocket();
+                this.updateStatus('WebSocket disabled');
+                this.updateWebSocketButtonStates();
+                this.refreshAPIStatus();
+                
+                // Update status display
+                document.getElementById('wsStatus').classList.remove('hidden');
+                document.getElementById('wsStatusText').textContent = 'Disabled';
+                document.getElementById('wsStatusText').className = 'text-gray-400';
+            }
+        } catch (error) {
+            console.error('Error disabling WebSocket:', error);
+            alert('Failed to disable WebSocket: ' + error.message);
+        }
+    }
+
+    /**
+     * Test WebSocket connection
+     */
+    async testWebSocketConnection() {
+        const endpoint = document.getElementById('wsEndpoint').value.trim();
+        
+        if (!endpoint) {
+            alert('Please enter a WebSocket endpoint');
+            return;
+        }
+        
+        this.updateStatus('Testing WebSocket connection...');
+        document.getElementById('wsStatus').classList.remove('hidden');
+        document.getElementById('wsStatusText').textContent = 'Testing connection...';
+        document.getElementById('wsStatusText').className = 'text-yellow-400';
+        
+        try {
+            const ws = new WebSocket(endpoint);
+            
+            const timeout = setTimeout(() => {
+                ws.close();
+                document.getElementById('wsStatusText').textContent = '❌ Connection timeout';
+                document.getElementById('wsStatusText').className = 'text-red-400';
+                this.updateStatus('Connection test failed: timeout');
+            }, 5000);
+            
+            ws.onopen = () => {
+                clearTimeout(timeout);
+                document.getElementById('wsStatusText').textContent = '✅ Connection successful!';
+                document.getElementById('wsStatusText').className = 'text-green-400';
+                this.updateStatus('Connection test successful');
+                ws.close();
+            };
+            
+            ws.onerror = (error) => {
+                clearTimeout(timeout);
+                document.getElementById('wsStatusText').textContent = '❌ Connection failed';
+                document.getElementById('wsStatusText').className = 'text-red-400';
+                this.updateStatus('Connection test failed');
+                console.error('WebSocket test error:', error);
+            };
+        } catch (error) {
+            document.getElementById('wsStatusText').textContent = '❌ Invalid endpoint';
+            document.getElementById('wsStatusText').className = 'text-red-400';
+            this.updateStatus('Invalid WebSocket endpoint');
+            console.error('WebSocket test error:', error);
+        }
+    }
+
+    /**
+     * Refresh API status display
+     */
+    async refreshAPIStatus() {
+        if (window.pocketParrotAPI) {
+            const status = window.pocketParrotAPI.getStatus();
+            const recordCount = await window.pocketParrotAPI.getRecordCount();
+            
+            document.getElementById('apiSubscribers').textContent = status.subscribers;
+            document.getElementById('apiWsStatus').textContent = status.wsEnabled ? 'Enabled' : 'Disabled';
+            document.getElementById('apiWsStatus').className = status.wsEnabled ? 'text-2xl font-bold text-green-400' : 'text-2xl font-bold text-gray-400';
+            document.getElementById('apiRecordCount').textContent = recordCount;
+            document.getElementById('apiWsConnections').textContent = status.wsConnections;
+        }
+    }
+
+    /**
+     * Update WebSocket button states
+     */
+    updateWebSocketButtonStates() {
+        if (window.pocketParrotAPI) {
+            const status = window.pocketParrotAPI.getStatus();
+            
+            if (status.wsEnabled) {
+                document.getElementById('enableWsBtn').classList.add('hidden');
+                document.getElementById('disableWsBtn').classList.remove('hidden');
+            } else {
+                document.getElementById('enableWsBtn').classList.remove('hidden');
+                document.getElementById('disableWsBtn').classList.add('hidden');
+            }
+        }
+    }
 }
 
 // Global app instance
 let app;
+let dataAPI;
 
 // Initialize app when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     app = new PocketParrot();
     // Make app globally available for onclick handlers
     window.app = app;
+    
+    // Initialize Data Access API after app is ready
+    if (typeof PocketParrotDataAPI !== 'undefined') {
+        dataAPI = new PocketParrotDataAPI(app);
+        dataAPI.loadConfiguration();
+        window.pocketParrotAPI = dataAPI;
+        console.log('📡 Data Access API initialized and available globally as window.pocketParrotAPI');
+    }
+});
 });

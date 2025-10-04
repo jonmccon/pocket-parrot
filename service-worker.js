@@ -3,11 +3,12 @@
  * Provides offline caching for static assets
  */
 
-const CACHE_NAME = 'pocket-parrot-v1';
+const CACHE_NAME = 'pocket-parrot-v2';
 const urlsToCache = [
   '/',
   '/index.html',
   '/app.js',
+  '/data-api.js',
   '/service-worker.js',
   'https://cdn.tailwindcss.com',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',

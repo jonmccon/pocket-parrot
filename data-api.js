@@ -1,0 +1,357 @@
+/**
+ * Pocket Parrot Data Access API
+ * Provides methods for external systems to access and subscribe to sensor data
+ */
+
+class PocketParrotDataAPI {
+    constructor(pocketParrotInstance) {
+        this.app = pocketParrotInstance;
+        this.subscribers = new Set();
+        this.wsConnections = new Set();
+        this.wsEnabled = false;
+        this.wsEndpoint = null;
+        this.autoReconnect = true;
+        this.reconnectDelay = 5000;
+        
+        // Listen for data updates
+        this.setupDataListener();
+    }
+
+    /**
+     * Set up listener for new data points
+     */
+    setupDataListener() {
+        // Override the original saveDataPoint to notify subscribers
+        const originalSaveDataPoint = this.app.saveDataPoint.bind(this.app);
+        
+        this.app.saveDataPoint = async (dataPoint) => {
+            const result = await originalSaveDataPoint(dataPoint);
+            
+            // Notify all subscribers
+            this.notifySubscribers(dataPoint);
+            
+            // Push to WebSocket if enabled
+            if (this.wsEnabled && this.wsEndpoint) {
+                this.pushToWebSocket(dataPoint);
+            }
+            
+            return result;
+        };
+    }
+
+    /**
+     * Subscribe to real-time data updates
+     * @param {Function} callback - Function to call when new data is captured
+     * @returns {Function} Unsubscribe function
+     */
+    subscribe(callback) {
+        if (typeof callback !== 'function') {
+            throw new Error('Callback must be a function');
+        }
+        
+        this.subscribers.add(callback);
+        console.log('📡 New subscriber added. Total subscribers:', this.subscribers.size);
+        
+        // Return unsubscribe function
+        return () => {
+            this.subscribers.delete(callback);
+            console.log('📡 Subscriber removed. Total subscribers:', this.subscribers.size);
+        };
+    }
+
+    /**
+     * Notify all subscribers of new data
+     */
+    notifySubscribers(dataPoint) {
+        // Create a safe copy without blob data for notifications
+        const safeDataPoint = this.prepareSafeDataPoint(dataPoint);
+        
+        this.subscribers.forEach(callback => {
+            try {
+                callback(safeDataPoint);
+            } catch (error) {
+                console.error('Error in subscriber callback:', error);
+            }
+        });
+    }
+
+    /**
+     * Prepare data point for transmission (convert blobs to base64)
+     */
+    async prepareSafeDataPoint(dataPoint) {
+        const safe = { ...dataPoint };
+        
+        if (dataPoint.photoBlob) {
+            safe.photoBase64 = await this.app.blobToBase64(dataPoint.photoBlob);
+            delete safe.photoBlob;
+        }
+        
+        if (dataPoint.audioBlob) {
+            safe.audioBase64 = await this.app.blobToBase64(dataPoint.audioBlob);
+            delete safe.audioBlob;
+        }
+        
+        return safe;
+    }
+
+    /**
+     * Get all data points
+     * @param {Object} options - Query options
+     * @returns {Promise<Array>} Array of data points
+     */
+    async getAllData(options = {}) {
+        const allData = await this.app.getAllData();
+        
+        // Apply filters if provided
+        let filtered = allData;
+        
+        if (options.startDate) {
+            const startTime = new Date(options.startDate).getTime();
+            filtered = filtered.filter(d => new Date(d.timestamp).getTime() >= startTime);
+        }
+        
+        if (options.endDate) {
+            const endTime = new Date(options.endDate).getTime();
+            filtered = filtered.filter(d => new Date(d.timestamp).getTime() <= endTime);
+        }
+        
+        if (options.hasGPS) {
+            filtered = filtered.filter(d => d.gps && d.gps.latitude && d.gps.longitude);
+        }
+        
+        if (options.hasPhoto) {
+            filtered = filtered.filter(d => d.photoBlob);
+        }
+        
+        if (options.hasAudio) {
+            filtered = filtered.filter(d => d.audioBlob);
+        }
+        
+        if (options.limit) {
+            filtered = filtered.slice(0, options.limit);
+        }
+        
+        return filtered;
+    }
+
+    /**
+     * Get data point by ID
+     * @param {Number} id - Data point ID
+     * @returns {Promise<Object>} Data point
+     */
+    async getDataById(id) {
+        return new Promise((resolve, reject) => {
+            const transaction = this.app.db.transaction(['sensorData'], 'readonly');
+            const store = transaction.objectStore('sensorData');
+            const request = store.get(id);
+            
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    /**
+     * Get record count
+     * @returns {Promise<Number>} Number of records
+     */
+    async getRecordCount() {
+        return await this.app.getRecordCount();
+    }
+
+    /**
+     * Configure WebSocket endpoint for data push
+     * @param {String} endpoint - WebSocket URL (e.g., "ws://localhost:8080/data")
+     * @param {Object} options - Configuration options
+     */
+    configureWebSocket(endpoint, options = {}) {
+        this.wsEndpoint = endpoint;
+        this.autoReconnect = options.autoReconnect !== false;
+        this.reconnectDelay = options.reconnectDelay || 5000;
+        
+        console.log('📡 WebSocket configured:', endpoint);
+        
+        // Save to localStorage for persistence
+        localStorage.setItem('pocketParrot_wsEndpoint', endpoint);
+        localStorage.setItem('pocketParrot_wsEnabled', 'false'); // Don't auto-enable
+    }
+
+    /**
+     * Enable WebSocket data push
+     */
+    async enableWebSocket() {
+        if (!this.wsEndpoint) {
+            throw new Error('WebSocket endpoint not configured. Call configureWebSocket() first.');
+        }
+        
+        this.wsEnabled = true;
+        await this.connectWebSocket();
+        
+        // Save state
+        localStorage.setItem('pocketParrot_wsEnabled', 'true');
+        
+        console.log('✅ WebSocket enabled');
+    }
+
+    /**
+     * Disable WebSocket data push
+     */
+    disableWebSocket() {
+        this.wsEnabled = false;
+        this.disconnectWebSocket();
+        
+        // Save state
+        localStorage.setItem('pocketParrot_wsEnabled', 'false');
+        
+        console.log('🔌 WebSocket disabled');
+    }
+
+    /**
+     * Connect to WebSocket server
+     */
+    async connectWebSocket() {
+        if (!this.wsEndpoint || !this.wsEnabled) return;
+        
+        try {
+            const ws = new WebSocket(this.wsEndpoint);
+            
+            ws.onopen = () => {
+                console.log('✅ WebSocket connected:', this.wsEndpoint);
+                this.wsConnections.add(ws);
+                
+                // Send initial handshake
+                ws.send(JSON.stringify({
+                    type: 'handshake',
+                    client: 'PocketParrot',
+                    version: '1.0',
+                    timestamp: new Date().toISOString()
+                }));
+            };
+            
+            ws.onerror = (error) => {
+                console.error('❌ WebSocket error:', error);
+            };
+            
+            ws.onclose = () => {
+                console.log('🔌 WebSocket disconnected');
+                this.wsConnections.delete(ws);
+                
+                // Auto-reconnect if enabled
+                if (this.wsEnabled && this.autoReconnect) {
+                    console.log(`🔄 Reconnecting in ${this.reconnectDelay}ms...`);
+                    setTimeout(() => this.connectWebSocket(), this.reconnectDelay);
+                }
+            };
+            
+            ws.onmessage = (event) => {
+                console.log('📥 WebSocket message received:', event.data);
+                // Handle incoming messages if needed
+            };
+            
+        } catch (error) {
+            console.error('❌ Failed to connect WebSocket:', error);
+        }
+    }
+
+    /**
+     * Disconnect from WebSocket server
+     */
+    disconnectWebSocket() {
+        this.wsConnections.forEach(ws => {
+            ws.close();
+        });
+        this.wsConnections.clear();
+    }
+
+    /**
+     * Push data point to WebSocket server
+     */
+    async pushToWebSocket(dataPoint) {
+        if (this.wsConnections.size === 0) {
+            console.warn('⚠️ No active WebSocket connections');
+            return;
+        }
+        
+        try {
+            // Prepare safe data point
+            const safeDataPoint = await this.prepareSafeDataPoint(dataPoint);
+            
+            const message = JSON.stringify({
+                type: 'data',
+                timestamp: new Date().toISOString(),
+                data: safeDataPoint
+            });
+            
+            // Send to all active connections
+            this.wsConnections.forEach(ws => {
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(message);
+                    console.log('📤 Data pushed to WebSocket');
+                }
+            });
+        } catch (error) {
+            console.error('❌ Failed to push data to WebSocket:', error);
+        }
+    }
+
+    /**
+     * Export data as JSON stream
+     * @param {Object} options - Export options
+     * @returns {Promise<String>} JSON string
+     */
+    async exportJSON(options = {}) {
+        const data = await this.getAllData(options);
+        
+        // Convert blobs to base64 if requested
+        if (options.includeMedia) {
+            const exportData = await Promise.all(data.map(async point => {
+                return await this.prepareSafeDataPoint(point);
+            }));
+            return JSON.stringify(exportData, null, 2);
+        }
+        
+        // Exclude blobs for smaller export
+        const exportData = data.map(point => {
+            const { photoBlob, audioBlob, ...rest } = point;
+            return rest;
+        });
+        
+        return JSON.stringify(exportData, null, 2);
+    }
+
+    /**
+     * Get API status
+     */
+    getStatus() {
+        return {
+            subscribers: this.subscribers.size,
+            wsEnabled: this.wsEnabled,
+            wsEndpoint: this.wsEndpoint,
+            wsConnections: this.wsConnections.size,
+            wsConnectionStates: Array.from(this.wsConnections).map(ws => ({
+                readyState: ws.readyState,
+                url: ws.url
+            }))
+        };
+    }
+
+    /**
+     * Load saved WebSocket configuration
+     */
+    loadConfiguration() {
+        const savedEndpoint = localStorage.getItem('pocketParrot_wsEndpoint');
+        const savedEnabled = localStorage.getItem('pocketParrot_wsEnabled') === 'true';
+        
+        if (savedEndpoint) {
+            this.wsEndpoint = savedEndpoint;
+            console.log('📡 Loaded saved WebSocket endpoint:', savedEndpoint);
+        }
+        
+        // Don't auto-enable on load, require manual enable
+        if (savedEnabled && savedEndpoint) {
+            console.log('ℹ️ WebSocket was previously enabled. Call enableWebSocket() to reconnect.');
+        }
+    }
+}
+
+// Make API globally available
+window.PocketParrotDataAPI = PocketParrotDataAPI;
