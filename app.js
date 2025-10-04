@@ -2044,4 +2044,3 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('📡 Data Access API initialized and available globally as window.pocketParrotAPI');
     }
 });
-});

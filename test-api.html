@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pocket Parrot API Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            background: #1a1a1a;
+            color: #00ff00;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        h1 { color: #00ff00; }
+        .test { 
+            background: #2a2a2a; 
+            padding: 10px; 
+            margin: 10px 0;
+            border-left: 4px solid #00ff00;
+        }
+        .pass { color: #00ff00; }
+        .fail { color: #ff0000; }
+        button {
+            background: #00ff00;
+            color: #1a1a1a;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            font-family: monospace;
+            font-weight: bold;
+        }
+        button:hover {
+            background: #00cc00;
+        }
+        #output {
+            background: #0a0a0a;
+            padding: 15px;
+            border: 1px solid #00ff00;
+            margin-top: 20px;
+            height: 400px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🦜 Pocket Parrot API Test Suite</h1>
+    
+    <div class="test">
+        <h3>Test 1: API Availability</h3>
+        <button onclick="testAPIAvailability()">Run Test</button>
+        <div id="test1"></div>
+    </div>
+    
+    <div class="test">
+        <h3>Test 2: Get Record Count</h3>
+        <button onclick="testRecordCount()">Run Test</button>
+        <div id="test2"></div>
+    </div>
+    
+    <div class="test">
+        <h3>Test 3: Get All Data</h3>
+        <button onclick="testGetAllData()">Run Test</button>
+        <div id="test3"></div>
+    </div>
+    
+    <div class="test">
+        <h3>Test 4: Subscribe to Updates</h3>
+        <button onclick="testSubscribe()">Subscribe</button>
+        <button onclick="unsubscribeTest()">Unsubscribe</button>
+        <div id="test4"></div>
+    </div>
+    
+    <div class="test">
+        <h3>Test 5: WebSocket Configuration</h3>
+        <input type="text" id="wsEndpoint" value="ws://localhost:8080/test" style="width: 300px; background: #2a2a2a; color: #00ff00; border: 1px solid #00ff00; padding: 5px;">
+        <button onclick="testWebSocketConfig()">Configure</button>
+        <div id="test5"></div>
+    </div>
+    
+    <div class="test">
+        <h3>Test 6: API Status</h3>
+        <button onclick="testGetStatus()">Get Status</button>
+        <div id="test6"></div>
+    </div>
+    
+    <h2>Test Output</h2>
+    <div id="output"></div>
+    
+    <script>
+        let unsubscribe = null;
+        
+        function log(msg, type = 'info') {
+            const output = document.getElementById('output');
+            const time = new Date().toLocaleTimeString();
+            const color = type === 'error' ? '#ff0000' : type === 'success' ? '#00ff00' : '#00aaff';
+            output.innerHTML += `<div style="color: ${color}">[${time}] ${msg}</div>`;
+            output.scrollTop = output.scrollHeight;
+        }
+        
+        async function testAPIAvailability() {
+            const result = document.getElementById('test1');
+            try {
+                if (typeof window.pocketParrotAPI === 'undefined') {
+                    result.innerHTML = '<span class="fail">❌ FAIL: API not available</span>';
+                    log('API not available - is Pocket Parrot loaded?', 'error');
+                    return;
+                }
+                result.innerHTML = '<span class="pass">✅ PASS: API is available</span>';
+                log('API is available at window.pocketParrotAPI', 'success');
+            } catch (error) {
+                result.innerHTML = '<span class="fail">❌ FAIL: ' + error.message + '</span>';
+                log('Error: ' + error.message, 'error');
+            }
+        }
+        
+        async function testRecordCount() {
+            const result = document.getElementById('test2');
+            try {
+                const api = window.pocketParrotAPI;
+                if (!api) {
+                    result.innerHTML = '<span class="fail">❌ FAIL: API not available</span>';
+                    return;
+                }
+                
+                const count = await api.getRecordCount();
+                result.innerHTML = `<span class="pass">✅ PASS: ${count} records found</span>`;
+                log(`Record count: ${count}`, 'success');
+            } catch (error) {
+                result.innerHTML = '<span class="fail">❌ FAIL: ' + error.message + '</span>';
+                log('Error getting record count: ' + error.message, 'error');
+            }
+        }
+        
+        async function testGetAllData() {
+            const result = document.getElementById('test3');
+            try {
+                const api = window.pocketParrotAPI;
+                if (!api) {
+                    result.innerHTML = '<span class="fail">❌ FAIL: API not available</span>';
+                    return;
+                }
+                
+                const data = await api.getAllData({ limit: 5 });
+                result.innerHTML = `<span class="pass">✅ PASS: Retrieved ${data.length} records</span>`;
+                log(`Retrieved ${data.length} records (limited to 5)`, 'success');
+                
+                if (data.length > 0) {
+                    log('Sample record: ' + JSON.stringify(data[0], null, 2));
+                }
+            } catch (error) {
+                result.innerHTML = '<span class="fail">❌ FAIL: ' + error.message + '</span>';
+                log('Error getting data: ' + error.message, 'error');
+            }
+        }
+        
+        async function testSubscribe() {
+            const result = document.getElementById('test4');
+            try {
+                const api = window.pocketParrotAPI;
+                if (!api) {
+                    result.innerHTML = '<span class="fail">❌ FAIL: API not available</span>';
+                    return;
+                }
+                
+                unsubscribe = api.subscribe((dataPoint) => {
+                    log('📊 New data received via subscription!', 'success');
+                    log('Timestamp: ' + dataPoint.timestamp);
+                    log('GPS: ' + JSON.stringify(dataPoint.gps));
+                });
+                
+                result.innerHTML = '<span class="pass">✅ PASS: Subscribed to updates</span>';
+                log('Subscribed to real-time updates', 'success');
+                log('Now capture some data to test...', 'info');
+            } catch (error) {
+                result.innerHTML = '<span class="fail">❌ FAIL: ' + error.message + '</span>';
+                log('Error subscribing: ' + error.message, 'error');
+            }
+        }
+        
+        function unsubscribeTest() {
+            const result = document.getElementById('test4');
+            if (unsubscribe) {
+                unsubscribe();
+                unsubscribe = null;
+                result.innerHTML = '<span class="pass">✅ Unsubscribed</span>';
+                log('Unsubscribed from updates', 'success');
+            } else {
+                result.innerHTML = '<span class="fail">❌ Not subscribed</span>';
+                log('Not currently subscribed', 'error');
+            }
+        }
+        
+        function testWebSocketConfig() {
+            const result = document.getElementById('test5');
+            const endpoint = document.getElementById('wsEndpoint').value;
+            
+            try {
+                const api = window.pocketParrotAPI;
+                if (!api) {
+                    result.innerHTML = '<span class="fail">❌ FAIL: API not available</span>';
+                    return;
+                }
+                
+                api.configureWebSocket(endpoint);
+                result.innerHTML = `<span class="pass">✅ PASS: Configured endpoint: ${endpoint}</span>`;
+                log(`WebSocket configured: ${endpoint}`, 'success');
+            } catch (error) {
+                result.innerHTML = '<span class="fail">❌ FAIL: ' + error.message + '</span>';
+                log('Error configuring WebSocket: ' + error.message, 'error');
+            }
+        }
+        
+        async function testGetStatus() {
+            const result = document.getElementById('test6');
+            try {
+                const api = window.pocketParrotAPI;
+                if (!api) {
+                    result.innerHTML = '<span class="fail">❌ FAIL: API not available</span>';
+                    return;
+                }
+                
+                const status = api.getStatus();
+                result.innerHTML = '<span class="pass">✅ PASS: Status retrieved</span>';
+                log('API Status:', 'success');
+                log('  Subscribers: ' + status.subscribers);
+                log('  WS Enabled: ' + status.wsEnabled);
+                log('  WS Endpoint: ' + (status.wsEndpoint || 'Not configured'));
+                log('  WS Connections: ' + status.wsConnections);
+            } catch (error) {
+                result.innerHTML = '<span class="fail">❌ FAIL: ' + error.message + '</span>';
+                log('Error getting status: ' + error.message, 'error');
+            }
+        }
+        
+        // Auto-run basic tests on load
+        window.addEventListener('load', () => {
+            log('🦜 Pocket Parrot API Test Suite Initialized', 'success');
+            log('Waiting for Pocket Parrot to load...', 'info');
+            
+            // Wait for Pocket Parrot to initialize
+            setTimeout(() => {
+                testAPIAvailability();
+            }, 2000);
+        });
+    </script>
+</body>
+</html>
