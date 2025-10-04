@@ -75,6 +75,7 @@ class PocketParrot {
         // Navigation
         document.getElementById('captureBtn').addEventListener('click', () => this.showPage('capture'));
         document.getElementById('viewBtn').addEventListener('click', () => this.showPage('viewer'));
+        document.getElementById('settingsBtn').addEventListener('click', () => this.showPage('settings'));
         
         // Modular capture controls
         document.getElementById('captureSensorDataBtn').addEventListener('click', () => this.captureSensorData());
@@ -96,6 +97,13 @@ class PocketParrot {
         // Filter changes
         document.getElementById('dateFilter').addEventListener('change', () => this.filterData());
         document.getElementById('objectFilter').addEventListener('change', () => this.filterData());
+        
+        // Settings controls
+        document.getElementById('saveWsConfigBtn').addEventListener('click', () => this.saveWebSocketConfig());
+        document.getElementById('enableWsBtn').addEventListener('click', () => this.enableWebSocket());
+        document.getElementById('disableWsBtn').addEventListener('click', () => this.disableWebSocket());
+        document.getElementById('testWsBtn').addEventListener('click', () => this.testWebSocketConnection());
+        document.getElementById('refreshStatusBtn').addEventListener('click', () => this.refreshAPIStatus());
         
         // Device orientation and motion
         if (typeof DeviceOrientationEvent !== 'undefined') {
@@ -219,6 +227,8 @@ class PocketParrot {
         // Initialize page-specific functionality
         if (pageName === 'viewer') {
             this.initViewer();
+        } else if (pageName === 'settings') {
+            this.initSettings();
         }
     }
 
@@ -555,7 +565,7 @@ class PocketParrot {
     async startCamera() {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'environment' }
+                video: { facingMode: 'user' } // Use front-facing camera for events
             });
             
             const video = document.getElementById('cameraPreview');
@@ -1829,14 +1839,349 @@ class PocketParrot {
             }
         }
     }
+
+    /**
+     * Initialize settings page
+     */
+    initSettings() {
+        // Load current WebSocket configuration
+        const savedEndpoint = localStorage.getItem('pocketParrot_wsEndpoint');
+        if (savedEndpoint) {
+            document.getElementById('wsEndpoint').value = savedEndpoint;
+        }
+        
+        // Update API status
+        this.refreshAPIStatus();
+        
+        // Update button states
+        this.updateWebSocketButtonStates();
+    }
+
+    /**
+     * Save WebSocket configuration
+     */
+    saveWebSocketConfig() {
+        const endpoint = document.getElementById('wsEndpoint').value.trim();
+        
+        if (!endpoint) {
+            alert('Please enter a WebSocket endpoint');
+            return;
+        }
+        
+        if (!endpoint.startsWith('ws://') && !endpoint.startsWith('wss://')) {
+            alert('WebSocket endpoint must start with ws:// or wss://');
+            return;
+        }
+        
+        try {
+            if (window.pocketParrotAPI) {
+                window.pocketParrotAPI.configureWebSocket(endpoint);
+                this.updateStatus('WebSocket configuration saved');
+                
+                // Show status
+                document.getElementById('wsStatus').classList.remove('hidden');
+                document.getElementById('wsStatusText').textContent = `Configured: ${endpoint}`;
+            }
+        } catch (error) {
+            console.error('Error saving WebSocket config:', error);
+            alert('Failed to save configuration: ' + error.message);
+        }
+    }
+
+    /**
+     * Enable WebSocket
+     */
+    async enableWebSocket() {
+        try {
+            if (window.pocketParrotAPI) {
+                await window.pocketParrotAPI.enableWebSocket();
+                this.updateStatus('WebSocket enabled');
+                this.updateWebSocketButtonStates();
+                this.refreshAPIStatus();
+                
+                // Update status display
+                document.getElementById('wsStatus').classList.remove('hidden');
+                document.getElementById('wsStatusText').textContent = 'Connecting...';
+                
+                // Check connection after a delay
+                setTimeout(() => {
+                    const status = window.pocketParrotAPI.getStatus();
+                    if (status.wsConnections > 0) {
+                        document.getElementById('wsStatusText').textContent = `✅ Connected (${status.wsConnections} connection${status.wsConnections > 1 ? 's' : ''})`;
+                        document.getElementById('wsStatusText').className = 'text-green-400';
+                    } else {
+                        document.getElementById('wsStatusText').textContent = '⚠️ Connection failed - check endpoint and try again';
+                        document.getElementById('wsStatusText').className = 'text-yellow-400';
+                    }
+                }, 2000);
+            }
+        } catch (error) {
+            console.error('Error enabling WebSocket:', error);
+            alert('Failed to enable WebSocket: ' + error.message);
+        }
+    }
+
+    /**
+     * Disable WebSocket
+     */
+    disableWebSocket() {
+        try {
+            if (window.pocketParrotAPI) {
+                window.pocketParrotAPI.disableWebSocket();
+                this.updateStatus('WebSocket disabled');
+                this.updateWebSocketButtonStates();
+                this.refreshAPIStatus();
+                
+                // Update status display
+                document.getElementById('wsStatus').classList.remove('hidden');
+                document.getElementById('wsStatusText').textContent = 'Disabled';
+                document.getElementById('wsStatusText').className = 'text-gray-400';
+            }
+        } catch (error) {
+            console.error('Error disabling WebSocket:', error);
+            alert('Failed to disable WebSocket: ' + error.message);
+        }
+    }
+
+    /**
+     * Test WebSocket connection
+     */
+    async testWebSocketConnection() {
+        const endpoint = document.getElementById('wsEndpoint').value.trim();
+        
+        if (!endpoint) {
+            alert('Please enter a WebSocket endpoint');
+            return;
+        }
+        
+        this.updateStatus('Testing WebSocket connection...');
+        document.getElementById('wsStatus').classList.remove('hidden');
+        document.getElementById('wsStatusText').textContent = 'Testing connection...';
+        document.getElementById('wsStatusText').className = 'text-yellow-400';
+        
+        try {
+            const ws = new WebSocket(endpoint);
+            
+            const timeout = setTimeout(() => {
+                ws.close();
+                document.getElementById('wsStatusText').textContent = '❌ Connection timeout';
+                document.getElementById('wsStatusText').className = 'text-red-400';
+                this.updateStatus('Connection test failed: timeout');
+            }, 5000);
+            
+            ws.onopen = () => {
+                clearTimeout(timeout);
+                document.getElementById('wsStatusText').textContent = '✅ Connection successful!';
+                document.getElementById('wsStatusText').className = 'text-green-400';
+                this.updateStatus('Connection test successful');
+                ws.close();
+            };
+            
+            ws.onerror = (error) => {
+                clearTimeout(timeout);
+                document.getElementById('wsStatusText').textContent = '❌ Connection failed';
+                document.getElementById('wsStatusText').className = 'text-red-400';
+                this.updateStatus('Connection test failed');
+                console.error('WebSocket test error:', error);
+            };
+        } catch (error) {
+            document.getElementById('wsStatusText').textContent = '❌ Invalid endpoint';
+            document.getElementById('wsStatusText').className = 'text-red-400';
+            this.updateStatus('Invalid WebSocket endpoint');
+            console.error('WebSocket test error:', error);
+        }
+    }
+
+    /**
+     * Refresh API status display
+     */
+    async refreshAPIStatus() {
+        if (window.pocketParrotAPI) {
+            const status = window.pocketParrotAPI.getStatus();
+            const recordCount = await window.pocketParrotAPI.getRecordCount();
+            
+            document.getElementById('apiSubscribers').textContent = status.subscribers;
+            document.getElementById('apiWsStatus').textContent = status.wsEnabled ? 'Enabled' : 'Disabled';
+            document.getElementById('apiWsStatus').className = status.wsEnabled ? 'text-2xl font-bold text-green-400' : 'text-2xl font-bold text-gray-400';
+            document.getElementById('apiRecordCount').textContent = recordCount;
+            document.getElementById('apiWsConnections').textContent = status.wsConnections;
+        }
+    }
+
+    /**
+     * Update WebSocket button states
+     */
+    updateWebSocketButtonStates() {
+        if (window.pocketParrotAPI) {
+            const status = window.pocketParrotAPI.getStatus();
+            
+            if (status.wsEnabled) {
+                document.getElementById('enableWsBtn').classList.add('hidden');
+                document.getElementById('disableWsBtn').classList.remove('hidden');
+            } else {
+                document.getElementById('enableWsBtn').classList.remove('hidden');
+                document.getElementById('disableWsBtn').classList.add('hidden');
+            }
+        }
+    }
 }
 
 // Global app instance
 let app;
+let dataAPI;
 
 // Initialize app when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     app = new PocketParrot();
     // Make app globally available for onclick handlers
     window.app = app;
+    
+    // Initialize Data Access API after app is ready
+    if (typeof PocketParrotDataAPI !== 'undefined') {
+        dataAPI = new PocketParrotDataAPI(app);
+        dataAPI.loadConfiguration();
+        window.pocketParrotAPI = dataAPI;
+        console.log('📡 Data Access API initialized and available globally as window.pocketParrotAPI');
+        
+        // Apply configuration from config.js or URL parameters
+        await applyConfiguration();
+    }
 });
+
+/**
+ * Apply configuration from config.js file and URL parameters
+ * URL parameters override config file settings
+ */
+async function applyConfiguration() {
+    const config = typeof PocketParrotConfig !== 'undefined' ? PocketParrotConfig : {};
+    const urlParams = new URLSearchParams(window.location.search);
+    
+    // Get WebSocket endpoint from URL parameter or config file
+    const wsEndpoint = urlParams.get('wsEndpoint') || urlParams.get('ws') || config.WEBSOCKET_ENDPOINT;
+    
+    // Get auto-enable setting from URL parameter or config file
+    const autoEnable = urlParams.has('autoEnable') 
+        ? urlParams.get('autoEnable') !== 'false'
+        : config.AUTO_ENABLE_WEBSOCKET;
+    
+    // Get event mode setting
+    const eventMode = urlParams.has('eventMode')
+        ? urlParams.get('eventMode') !== 'false'
+        : config.EVENT_MODE;
+    
+    // Get auto-start capture setting
+    const autoStartCapture = urlParams.has('autoStart')
+        ? urlParams.get('autoStart') !== 'false'
+        : config.AUTO_START_CAPTURE;
+    
+    // Get event name
+    const eventName = urlParams.get('eventName') || urlParams.get('event') || config.EVENT_NAME;
+    
+    console.log('📋 Configuration applied:', {
+        wsEndpoint,
+        autoEnable,
+        eventMode,
+        autoStartCapture,
+        eventName
+    });
+    
+    // Apply event mode styling
+    if (eventMode) {
+        applyEventMode(eventName);
+    }
+    
+    // Configure WebSocket if endpoint is provided
+    if (wsEndpoint && dataAPI) {
+        console.log(`🔌 Auto-configuring WebSocket: ${wsEndpoint}`);
+        dataAPI.configureWebSocket(wsEndpoint, {
+            autoReconnect: true,
+            reconnectDelay: 5000
+        });
+        
+        // Pre-fill the Settings page input if it exists
+        const wsInput = document.getElementById('wsEndpoint');
+        if (wsInput) {
+            wsInput.value = wsEndpoint;
+        }
+        
+        // Auto-enable WebSocket if configured
+        if (autoEnable) {
+            try {
+                await dataAPI.enableWebSocket();
+                console.log('✅ WebSocket auto-enabled');
+                
+                // Update UI
+                if (app && app.updateWebSocketButtonStates) {
+                    app.updateWebSocketButtonStates();
+                }
+                
+                // Show connection status to user
+                app.updateStatus('Connected to event server');
+            } catch (error) {
+                console.error('❌ Failed to auto-enable WebSocket:', error);
+                app.updateStatus('Failed to connect to server');
+            }
+        }
+    }
+    
+    // Show welcome message if configured
+    if (config.SHOW_WELCOME_MESSAGE && (eventName || config.WELCOME_MESSAGE)) {
+        showWelcomeMessage(config.WELCOME_MESSAGE, eventName);
+    }
+    
+    // Auto-start capture if configured
+    if (autoStartCapture) {
+        console.log('🚀 Auto-start capture enabled');
+        // This will be triggered after permissions are granted
+        window.autoStartCaptureEnabled = true;
+    }
+}
+
+/**
+ * Apply event mode styling and hide Settings button
+ */
+function applyEventMode(eventName) {
+    console.log('🎉 Event mode enabled');
+    
+    // Hide Settings button
+    const settingsBtn = document.getElementById('settingsBtn');
+    if (settingsBtn) {
+        settingsBtn.style.display = 'none';
+    }
+    
+    // Update page title if event name is provided
+    if (eventName) {
+        document.title = `${eventName} - Pocket Parrot`;
+        const titleElement = document.querySelector('h1');
+        if (titleElement) {
+            titleElement.textContent = `🦜 ${eventName}`;
+        }
+    }
+    
+    // Simplify UI for event experience
+    const statusDisplay = document.getElementById('statusDisplay');
+    if (statusDisplay) {
+        statusDisplay.classList.add('bg-green-900', 'border-green-800');
+    }
+}
+
+/**
+ * Show welcome message to event participants
+ */
+function showWelcomeMessage(message, eventName) {
+    const welcomeDiv = document.createElement('div');
+    welcomeDiv.id = 'welcomeMessage';
+    welcomeDiv.className = 'fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50';
+    welcomeDiv.innerHTML = `
+        <div class="bg-gray-800 p-8 rounded-lg border-2 border-green-600 max-w-md text-center">
+            <h2 class="text-3xl font-bold mb-4 text-green-400">🦜 Welcome!</h2>
+            ${eventName ? `<h3 class="text-xl mb-4 text-gray-200">${eventName}</h3>` : ''}
+            <p class="text-gray-300 mb-6">${message}</p>
+            <button onclick="document.getElementById('welcomeMessage').remove()" 
+                    class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-bold text-lg">
+                Let's Go! 🚀
+            </button>
+        </div>
+    `;
+    document.body.appendChild(welcomeDiv);
+}

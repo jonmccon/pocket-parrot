@@ -89,6 +89,9 @@
                 <button id="viewBtn" class="nav-btn bg-green-600 hover:bg-green-700 px-3 py-1 rounded text-sm">
                     View Data
                 </button>
+                <button id="settingsBtn" class="nav-btn bg-purple-600 hover:bg-purple-700 px-3 py-1 rounded text-sm">
+                    Settings
+                </button>
             </div>
         </div>
     </nav>
@@ -233,8 +236,8 @@
                     </div>
                 </div>
 
-                <!-- Audio Section -->
-                <div class="bg-gray-700 p-4 rounded-lg border border-gray-600">
+                <!-- Audio Section - Hidden for events -->
+                <div class="bg-gray-700 p-4 rounded-lg border border-gray-600" style="display: none;" id="audioSection">
                     <h3 class="font-semibold text-gray-100 mb-3">🎤 Audio Recording</h3>
                     <div class="flex flex-wrap gap-3 mb-3">
                         <button id="startRecordingBtn" class="bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded text-sm">
@@ -291,6 +294,132 @@
             </div>
         </div>
 
+        <!-- Settings Page -->
+        <div id="settingsPage" class="page hidden">
+            <div class="bg-gray-800 rounded-lg shadow-lg p-6 mb-6 border border-gray-700">
+                <h2 class="text-2xl font-bold mb-4 text-gray-100">⚙️ Data Access Settings</h2>
+                
+                <!-- JavaScript API Documentation -->
+                <div class="mb-6">
+                    <h3 class="text-xl font-semibold mb-2 text-gray-200">📡 JavaScript API Access</h3>
+                    <p class="text-sm text-gray-400 mb-3">
+                        For same-origin integrations, use the JavaScript API to access data programmatically.
+                    </p>
+                    <div class="bg-gray-900 border border-gray-700 rounded p-4 text-sm text-gray-300 font-mono">
+                        <div class="mb-2">// Access the global API instance</div>
+                        <div class="mb-2">const api = window.pocketParrotAPI;</div>
+                        <div class="mb-2">&nbsp;</div>
+                        <div class="mb-2">// Get all data</div>
+                        <div class="mb-2">const data = await api.getAllData();</div>
+                        <div class="mb-2">&nbsp;</div>
+                        <div class="mb-2">// Subscribe to real-time updates</div>
+                        <div class="mb-2">const unsubscribe = api.subscribe((dataPoint) => {</div>
+                        <div class="mb-2">&nbsp;&nbsp;console.log('New data:', dataPoint);</div>
+                        <div class="mb-2">});</div>
+                    </div>
+                </div>
+
+                <!-- WebSocket Configuration -->
+                <div class="mb-6">
+                    <h3 class="text-xl font-semibold mb-2 text-gray-200">🔌 WebSocket Push Configuration</h3>
+                    <p class="text-sm text-gray-400 mb-3">
+                        Configure an external WebSocket endpoint to receive real-time data as it's captured.
+                    </p>
+                    
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-2 text-gray-300">WebSocket Endpoint</label>
+                        <input 
+                            type="text" 
+                            id="wsEndpoint" 
+                            placeholder="ws://localhost:8080/data"
+                            class="w-full border border-gray-600 bg-gray-700 text-gray-200 rounded px-3 py-2 text-sm"
+                        />
+                        <p class="text-xs text-gray-500 mt-1">Example: ws://your-server.com:8080/pocket-parrot</p>
+                    </div>
+
+                    <div class="flex gap-3 mb-4">
+                        <button id="saveWsConfigBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm">
+                            💾 Save Configuration
+                        </button>
+                        <button id="enableWsBtn" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-sm">
+                            ✅ Enable WebSocket
+                        </button>
+                        <button id="disableWsBtn" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded text-sm hidden">
+                            🔌 Disable WebSocket
+                        </button>
+                        <button id="testWsBtn" class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded text-sm">
+                            🧪 Test Connection
+                        </button>
+                    </div>
+
+                    <div id="wsStatus" class="hidden bg-gray-900 border border-gray-700 rounded p-3 text-sm">
+                        <div class="font-semibold mb-1 text-gray-200">Connection Status</div>
+                        <div id="wsStatusText" class="text-gray-400">Not configured</div>
+                    </div>
+                </div>
+
+                <!-- API Status -->
+                <div class="mb-6">
+                    <h3 class="text-xl font-semibold mb-2 text-gray-200">📊 API Status</h3>
+                    <div class="bg-gray-900 border border-gray-700 rounded p-4">
+                        <div class="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                                <div class="text-gray-400">Active Subscribers</div>
+                                <div id="apiSubscribers" class="text-2xl font-bold text-blue-400">0</div>
+                            </div>
+                            <div>
+                                <div class="text-gray-400">WebSocket Status</div>
+                                <div id="apiWsStatus" class="text-2xl font-bold text-gray-400">Disabled</div>
+                            </div>
+                            <div>
+                                <div class="text-gray-400">Total Records</div>
+                                <div id="apiRecordCount" class="text-2xl font-bold text-green-400">0</div>
+                            </div>
+                            <div>
+                                <div class="text-gray-400">WebSocket Connections</div>
+                                <div id="apiWsConnections" class="text-2xl font-bold text-purple-400">0</div>
+                            </div>
+                        </div>
+                        <button id="refreshStatusBtn" class="mt-4 bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded text-sm">
+                            🔄 Refresh Status
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Export API -->
+                <div class="mb-6">
+                    <h3 class="text-xl font-semibold mb-2 text-gray-200">📤 Export API</h3>
+                    <p class="text-sm text-gray-400 mb-3">
+                        Export data programmatically with filtering options.
+                    </p>
+                    <div class="bg-gray-900 border border-gray-700 rounded p-4 text-sm text-gray-300 font-mono">
+                        <div class="mb-2">// Export with filters</div>
+                        <div class="mb-2">const json = await api.exportJSON({</div>
+                        <div class="mb-2">&nbsp;&nbsp;startDate: '2024-01-01',</div>
+                        <div class="mb-2">&nbsp;&nbsp;endDate: '2024-12-31',</div>
+                        <div class="mb-2">&nbsp;&nbsp;hasGPS: true,</div>
+                        <div class="mb-2">&nbsp;&nbsp;includeMedia: false,</div>
+                        <div class="mb-2">&nbsp;&nbsp;limit: 100</div>
+                        <div class="mb-2">});</div>
+                    </div>
+                </div>
+
+                <!-- Documentation Link -->
+                <div class="bg-blue-900 border border-blue-800 rounded p-4">
+                    <h3 class="text-lg font-semibold mb-2 text-blue-200">📚 Documentation</h3>
+                    <p class="text-sm text-blue-300 mb-2">
+                        Full API documentation is available in the README.md file. See the "Data Access API" section for complete details on:
+                    </p>
+                    <ul class="list-disc list-inside text-sm text-blue-300 space-y-1">
+                        <li>JavaScript API methods and examples</li>
+                        <li>WebSocket message format and protocol</li>
+                        <li>Query options and filtering</li>
+                        <li>Authentication and security considerations</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
         <!-- Loading Overlay -->
         <div id="loadingOverlay" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center hidden z-50">
             <div class="bg-gray-800 p-6 rounded-lg border border-gray-700">
@@ -300,6 +429,12 @@
         </div>
     </div>
 
+    <!-- Configuration Script -->
+    <script src="config.js"></script>
+    
+    <!-- Data Access API Script -->
+    <script src="data-api.js"></script>
+    
     <!-- Main Application Script -->
     <script src="app.js"></script>
 </body>

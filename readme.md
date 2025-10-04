@@ -63,6 +63,17 @@ https://jonmccon.github.io/pocket-parrot/
 - Includes base64-encoded images and audio
 - Perfect for data analysis or backup
 
+### 📡 Data Access API *(NEW)*
+- **JavaScript API**: Programmatic access to sensor data for same-origin integrations
+- **WebSocket Push**: Real-time data streaming to external servers
+- **Multi-User Support**: Multiple phones can stream to one server simultaneously
+- **Event Mode**: Pre-configure for seamless event experiences - scan QR, start streaming!
+- **Real-time Subscriptions**: Observer pattern for immediate data access
+- **Flexible Filtering**: Query by date, GPS, media, and more
+- **See [DATA_ACCESS_API.md](DATA_ACCESS_API.md) for complete documentation**
+- **See [MULTI_USER_GUIDE.md](MULTI_USER_GUIDE.md) for multi-user streaming setup**
+- **See [EVENT_DEPLOYMENT_GUIDE.md](EVENT_DEPLOYMENT_GUIDE.md) for event deployments**
+
 ## Technical Details
 
 ### Architecture
