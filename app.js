@@ -17,6 +17,13 @@ class PocketParrot {
         this.markers = [];
         this.hasRequestedPermissions = false; // Track if permissions have been requested
         
+        // Live streaming properties
+        this.isLiveStreaming = false;
+        this.streamingInterval = null;
+        this.captureIntervalMs = 5000; // Default 5 seconds
+        this.samplesSent = 0;
+        this.autoStartCapture = false; // Will be set by URL params or config
+        
         this.init();
     }
 
@@ -77,6 +84,10 @@ class PocketParrot {
         document.getElementById('viewBtn').addEventListener('click', () => this.showPage('viewer'));
         document.getElementById('settingsBtn').addEventListener('click', () => this.showPage('settings'));
         
+        // Live streaming controls
+        document.getElementById('startLiveStreamBtn').addEventListener('click', () => this.startLiveStream());
+        document.getElementById('stopLiveStreamBtn').addEventListener('click', () => this.stopLiveStream());
+        
         // Modular capture controls
         document.getElementById('captureSensorDataBtn').addEventListener('click', () => this.captureSensorData());
         
@@ -104,6 +115,12 @@ class PocketParrot {
         document.getElementById('disableWsBtn').addEventListener('click', () => this.disableWebSocket());
         document.getElementById('testWsBtn').addEventListener('click', () => this.testWebSocketConnection());
         document.getElementById('refreshStatusBtn').addEventListener('click', () => this.refreshAPIStatus());
+        
+        // Streaming configuration controls
+        document.getElementById('saveStreamingConfigBtn').addEventListener('click', () => this.saveStreamingConfig());
+        document.getElementById('resetStreamingConfigBtn').addEventListener('click', () => this.resetStreamingConfig());
+        document.getElementById('captureInterval').addEventListener('change', () => this.updateDataUsageEstimate());
+        document.getElementById('dataMode').addEventListener('change', () => this.updateDataUsageEstimate());
         
         // Device orientation and motion
         if (typeof DeviceOrientationEvent !== 'undefined') {
@@ -973,6 +990,285 @@ class PocketParrot {
         } catch (error) {
             console.error('Error capturing sensor data:', error);
             this.updateStatus('Sensor capture failed');
+        }
+    }
+
+    /**
+     * Start live streaming of sensor data
+     */
+    async startLiveStream() {
+        try {
+            this.updateStatus('Starting live stream...');
+            
+            // First request permissions if not already done
+            if (!this.hasRequestedPermissions) {
+                await this.requestPermissions();
+            }
+            
+            // Configure WebSocket if not already connected
+            if (window.pocketParrotAPI && !window.pocketParrotAPI.getStatus().wsEnabled) {
+                // Check if endpoint is configured
+                const wsEndpoint = localStorage.getItem('pocketParrot_wsEndpoint');
+                if (wsEndpoint) {
+                    try {
+                        await window.pocketParrotAPI.enableWebSocket();
+                        this.updateStatus('Connected to server...');
+                    } catch (error) {
+                        console.warn('WebSocket connection failed, continuing with local storage only:', error);
+                    }
+                } else {
+                    console.log('No WebSocket endpoint configured, data will be stored locally only');
+                }
+            }
+            
+            // Start continuous GPS tracking
+            this.startLocationTracking();
+            
+            // Set streaming state
+            this.isLiveStreaming = true;
+            this.samplesSent = 0;
+            
+            // Update UI
+            this.updateStreamingUI();
+            
+            // Capture first sample immediately
+            await this.captureStreamingSample();
+            
+            // Start continuous capture
+            this.streamingInterval = setInterval(async () => {
+                if (this.isLiveStreaming) {
+                    await this.captureStreamingSample();
+                }
+            }, this.captureIntervalMs);
+            
+            this.updateStatus(`Live streaming started (${this.captureIntervalMs/1000}s interval)`);
+            
+        } catch (error) {
+            console.error('Error starting live stream:', error);
+            this.updateStatus('Failed to start live stream');
+            this.stopLiveStream();
+        }
+    }
+
+    /**
+     * Stop live streaming
+     */
+    stopLiveStream() {
+        this.isLiveStreaming = false;
+        
+        if (this.streamingInterval) {
+            clearInterval(this.streamingInterval);
+            this.streamingInterval = null;
+        }
+        
+        // Stop location tracking
+        if (this.locationWatchId) {
+            navigator.geolocation.clearWatch(this.locationWatchId);
+            this.locationWatchId = null;
+        }
+        
+        // Update UI
+        this.updateStreamingUI();
+        
+        this.updateStatus(`Live streaming stopped (${this.samplesSent} samples sent)`);
+        console.log(`📊 Live streaming session complete: ${this.samplesSent} samples sent`);
+    }
+
+    /**
+     * Capture a lightweight sensor sample for streaming
+     */
+    async captureStreamingSample() {
+        try {
+            const timestamp = new Date().toISOString();
+            
+            // Get streaming configuration
+            const config = this.getStreamingConfig();
+            
+            const dataPoint = {
+                timestamp,
+                captureMethod: 'live_streaming',
+                streamingSession: true,
+                dataMode: config.dataMode,
+                gps: null,
+                orientation: null,
+                motion: null,
+                weather: null,
+                objectsDetected: [],
+                photoBlob: null,
+                audioBlob: null
+            };
+            
+            // Get GPS data if available
+            if (this.currentPosition) {
+                const coords = this.currentPosition.coords;
+                dataPoint.gps = {
+                    latitude: coords.latitude,
+                    longitude: coords.longitude,
+                    altitude: coords.altitude,
+                    accuracy: coords.accuracy,
+                    speed: coords.speed,
+                    heading: coords.heading
+                };
+            }
+            
+            // Get orientation and motion data based on configuration
+            if (config.dataMode === 'sensors' || config.dataMode === 'full') {
+                // Get orientation data
+                if (window.DeviceOrientationEvent) {
+                    const alphaEl = document.getElementById('alpha');
+                    const betaEl = document.getElementById('beta');
+                    const gammaEl = document.getElementById('gamma');
+                    
+                    if (alphaEl && alphaEl.textContent !== '--') {
+                        dataPoint.orientation = {
+                            alpha: parseFloat(alphaEl.textContent),
+                            beta: parseFloat(betaEl.textContent),
+                            gamma: parseFloat(gammaEl.textContent)
+                        };
+                    }
+                }
+                
+                // Get motion data
+                if (window.DeviceMotionEvent) {
+                    const accelXEl = document.getElementById('accelX');
+                    const accelYEl = document.getElementById('accelY');
+                    const accelZEl = document.getElementById('accelZ');
+                    
+                    if (accelXEl && accelXEl.textContent !== '--') {
+                        dataPoint.motion = {
+                            accelerationX: parseFloat(accelXEl.textContent),
+                            accelerationY: parseFloat(accelYEl.textContent),
+                            accelerationZ: parseFloat(accelZEl.textContent)
+                        };
+                    }
+                }
+            }
+            
+            // Get weather data based on configuration (less frequently to reduce API calls)
+            if (config.includeWeather && (config.dataMode === 'full' || this.samplesSent % 12 === 0) && this.currentPosition) {
+                const weatherResult = await this.getWeatherWithFallback({
+                    latitude: this.currentPosition.coords.latitude,
+                    longitude: this.currentPosition.coords.longitude
+                });
+                dataPoint.weather = weatherResult;
+            }
+            
+            // Get media data if configured
+            if (config.includeMedia) {
+                // Get photo if camera is active
+                const video = document.getElementById('cameraPreview');
+                if (!video.classList.contains('hidden') && video.srcObject) {
+                    const photoData = await this.takePhoto();
+                    dataPoint.photoBlob = photoData.blob;
+                    dataPoint.objectsDetected = photoData.detectedObjects;
+                    dataPoint.colorPalette = photoData.colorPalette;
+                }
+                
+                // Get audio if recording
+                if (this.audioChunks.length > 0) {
+                    dataPoint.audioBlob = new Blob(this.audioChunks, { type: 'audio/wav' });
+                    this.audioChunks = []; // Clear for next recording
+                }
+            }
+            
+            // Save to IndexedDB
+            await this.saveDataPoint(dataPoint);
+            
+            // Increment counter and update UI
+            this.samplesSent++;
+            this.updateStreamingStats();
+            
+            console.log(`📡 Streaming sample ${this.samplesSent}:`, dataPoint);
+            
+        } catch (error) {
+            console.error('Error capturing streaming sample:', error);
+        }
+    }
+
+    /**
+     * Get current streaming configuration
+     */
+    getStreamingConfig() {
+        try {
+            const saved = localStorage.getItem('pocketParrot_streamingConfig');
+            if (saved) {
+                return JSON.parse(saved);
+            }
+        } catch (error) {
+            console.error('Error loading streaming config:', error);
+        }
+        
+        // Return defaults
+        return {
+            captureInterval: 5000,
+            dataMode: 'gps',
+            includeWeather: true,
+            includeMedia: false,
+            highAccuracyGPS: true
+        };
+    }
+
+    /**
+     * Update streaming UI elements
+     */
+    updateStreamingUI() {
+        const startBtn = document.getElementById('startLiveStreamBtn');
+        const stopBtn = document.getElementById('stopLiveStreamBtn');
+        const streamingStatus = document.getElementById('streamingStatus');
+        const streamingStatusText = document.getElementById('streamingStatusText');
+        
+        if (this.isLiveStreaming) {
+            startBtn.classList.add('hidden');
+            stopBtn.classList.remove('hidden');
+            streamingStatus.classList.remove('hidden');
+            if (streamingStatusText) streamingStatusText.textContent = 'Active';
+        } else {
+            startBtn.classList.remove('hidden');
+            stopBtn.classList.add('hidden');
+            streamingStatus.classList.add('hidden');
+            if (streamingStatusText) streamingStatusText.textContent = 'Inactive';
+        }
+    }
+
+    /**
+     * Update streaming statistics
+     */
+    updateStreamingStats() {
+        const samplesSentEl = document.getElementById('samplesSent');
+        const streamingRateEl = document.getElementById('streamingRate');
+        const connectionStatusEl = document.getElementById('connectionStatus');
+        
+        if (samplesSentEl) samplesSentEl.textContent = this.samplesSent;
+        if (streamingRateEl) streamingRateEl.textContent = `Every ${this.captureIntervalMs/1000}s`;
+        
+        if (connectionStatusEl && window.pocketParrotAPI) {
+            const status = window.pocketParrotAPI.getStatus();
+            connectionStatusEl.textContent = status.wsEnabled && status.wsConnections > 0 ? '● Connected' : '○ Local Only';
+            connectionStatusEl.className = status.wsEnabled && status.wsConnections > 0 ? 
+                'text-xl font-bold text-green-400' : 'text-xl font-bold text-yellow-400';
+        }
+    }
+
+    /**
+     * Start location tracking for live streaming
+     */
+    startLocationTracking() {
+        if ('geolocation' in navigator && !this.locationWatchId) {
+            this.locationWatchId = navigator.geolocation.watchPosition(
+                (position) => {
+                    this.currentPosition = position;
+                    this.updateLocationData(position);
+                },
+                (error) => {
+                    console.warn('Location tracking error:', error);
+                },
+                {
+                    enableHighAccuracy: true,
+                    maximumAge: 30000,
+                    timeout: 15000
+                }
+            );
+            console.log('Location tracking started for live streaming');
         }
     }
 
@@ -1850,6 +2146,10 @@ class PocketParrot {
             document.getElementById('wsEndpoint').value = savedEndpoint;
         }
         
+        // Load streaming configuration
+        this.loadStreamingConfig();
+        this.updateDataUsageEstimate();
+        
         // Update API status
         this.refreshAPIStatus();
         
@@ -2024,6 +2324,128 @@ class PocketParrot {
             }
         }
     }
+
+    /**
+     * Save streaming configuration
+     */
+    saveStreamingConfig() {
+        try {
+            const captureInterval = parseInt(document.getElementById('captureInterval').value);
+            const dataMode = document.getElementById('dataMode').value;
+            const includeWeather = document.getElementById('includeWeather').checked;
+            const includeMedia = document.getElementById('includeMedia').checked;
+            const highAccuracyGPS = document.getElementById('highAccuracyGPS').checked;
+            
+            const config = {
+                captureInterval,
+                dataMode,
+                includeWeather,
+                includeMedia,
+                highAccuracyGPS
+            };
+            
+            // Save to localStorage
+            localStorage.setItem('pocketParrot_streamingConfig', JSON.stringify(config));
+            
+            // Apply configuration
+            this.captureIntervalMs = captureInterval;
+            
+            this.updateStatus('Streaming configuration saved');
+            console.log('📊 Streaming configuration saved:', config);
+            
+        } catch (error) {
+            console.error('Error saving streaming config:', error);
+            this.updateStatus('Failed to save streaming configuration');
+        }
+    }
+
+    /**
+     * Load streaming configuration
+     */
+    loadStreamingConfig() {
+        try {
+            const saved = localStorage.getItem('pocketParrot_streamingConfig');
+            if (saved) {
+                const config = JSON.parse(saved);
+                
+                // Apply to UI
+                document.getElementById('captureInterval').value = config.captureInterval || 5000;
+                document.getElementById('dataMode').value = config.dataMode || 'gps';
+                document.getElementById('includeWeather').checked = config.includeWeather !== false;
+                document.getElementById('includeMedia').checked = config.includeMedia || false;
+                document.getElementById('highAccuracyGPS').checked = config.highAccuracyGPS !== false;
+                
+                // Apply to app
+                this.captureIntervalMs = config.captureInterval || 5000;
+                
+                console.log('📊 Streaming configuration loaded:', config);
+            }
+        } catch (error) {
+            console.error('Error loading streaming config:', error);
+        }
+    }
+
+    /**
+     * Reset streaming configuration to defaults
+     */
+    resetStreamingConfig() {
+        document.getElementById('captureInterval').value = 5000;
+        document.getElementById('dataMode').value = 'gps';
+        document.getElementById('includeWeather').checked = true;
+        document.getElementById('includeMedia').checked = false;
+        document.getElementById('highAccuracyGPS').checked = true;
+        
+        this.captureIntervalMs = 5000;
+        
+        // Remove saved config
+        localStorage.removeItem('pocketParrot_streamingConfig');
+        
+        this.updateDataUsageEstimate();
+        this.updateStatus('Streaming configuration reset to defaults');
+    }
+
+    /**
+     * Update data usage estimate
+     */
+    updateDataUsageEstimate() {
+        const interval = parseInt(document.getElementById('captureInterval').value);
+        const dataMode = document.getElementById('dataMode').value;
+        const includeWeather = document.getElementById('includeWeather').checked;
+        const includeMedia = document.getElementById('includeMedia').checked;
+        
+        // Base data sizes (in bytes per sample)
+        const baseSizes = {
+            gps: 200,        // GPS coordinates + timestamp
+            sensors: 400,    // GPS + orientation + motion
+            full: 600        // GPS + sensors + weather
+        };
+        
+        let baseSize = baseSizes[dataMode] || baseSizes.gps;
+        if (includeWeather && dataMode !== 'full') baseSize += 200;
+        
+        // Calculate samples per hour
+        const samplesPerHour = 3600000 / interval; // 3600000ms = 1 hour
+        const bytesPerHour = samplesPerHour * baseSize;
+        const kbPerHour = Math.round(bytesPerHour / 1024);
+        
+        const estimateEl = document.getElementById('dataUsageEstimate');
+        if (estimateEl) {
+            let html = `<div>Current config: ~${kbPerHour}KB/hour (${samplesPerHour} samples)</div>`;
+            
+            if (includeMedia) {
+                html += `<div class="text-yellow-400">+ Media: 500KB-2MB per capture</div>`;
+            }
+            
+            // Add comparison
+            if (interval <= 2000) {
+                html += `<div class="text-red-400">⚠️ High frequency - may drain battery quickly</div>`;
+            } else if (interval >= 30000) {
+                html += `<div class="text-green-400">✓ Low frequency - battery friendly</div>`;
+            }
+            
+            estimateEl.innerHTML = html;
+        }
+    }
 }
 
 // Global app instance
@@ -2074,6 +2496,13 @@ async function applyConfiguration() {
         ? urlParams.get('autoStart') !== 'false'
         : config.AUTO_START_CAPTURE;
     
+    // Get streaming configuration from URL parameters
+    const captureInterval = urlParams.get('interval') || urlParams.get('captureInterval') || config.CAPTURE_INTERVAL || 5000;
+    const dataMode = urlParams.get('dataMode') || urlParams.get('mode') || 'gps';
+    const includeWeather = urlParams.has('weather') ? urlParams.get('weather') !== 'false' : true;
+    const includeMedia = urlParams.has('media') ? urlParams.get('media') === 'true' : false;
+    const highAccuracyGPS = urlParams.has('highGPS') ? urlParams.get('highGPS') !== 'false' : true;
+    
     // Get event name
     const eventName = urlParams.get('eventName') || urlParams.get('event') || config.EVENT_NAME;
     
@@ -2082,8 +2511,35 @@ async function applyConfiguration() {
         autoEnable,
         eventMode,
         autoStartCapture,
+        streamingConfig: {
+            captureInterval: parseInt(captureInterval),
+            dataMode,
+            includeWeather,
+            includeMedia,
+            highAccuracyGPS
+        },
         eventName
     });
+    
+    // Apply streaming configuration if URL parameters are provided
+    if (urlParams.has('interval') || urlParams.has('dataMode') || urlParams.has('mode')) {
+        const streamingConfig = {
+            captureInterval: parseInt(captureInterval),
+            dataMode,
+            includeWeather,
+            includeMedia,
+            highAccuracyGPS
+        };
+        
+        // Save to localStorage to persist the configuration
+        localStorage.setItem('pocketParrot_streamingConfig', JSON.stringify(streamingConfig));
+        
+        // Apply to app instance
+        if (app) {
+            app.captureIntervalMs = parseInt(captureInterval);
+            console.log('📊 Streaming configuration applied from URL');
+        }
+    }
     
     // Apply event mode styling
     if (eventMode) {
@@ -2132,8 +2588,19 @@ async function applyConfiguration() {
     // Auto-start capture if configured
     if (autoStartCapture) {
         console.log('🚀 Auto-start capture enabled');
-        // This will be triggered after permissions are granted
+        // Set flag for auto-start after permissions
         window.autoStartCaptureEnabled = true;
+        
+        // If in event mode, auto-start streaming immediately
+        if (eventMode) {
+            setTimeout(async () => {
+                try {
+                    await app.startLiveStream();
+                } catch (error) {
+                    console.error('Failed to auto-start streaming:', error);
+                }
+            }, 2000); // Delay to ensure app is ready
+        }
     }
 }
 

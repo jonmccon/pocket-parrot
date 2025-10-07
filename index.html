@@ -75,6 +75,53 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        
+        /* Mobile-first responsive design */
+        @media (max-width: 768px) {
+            .sensor-data {
+                font-size: 0.75rem;
+            }
+            
+            /* Compact sensor grid on mobile */
+            .mobile-sensor-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 0.75rem;
+            }
+            
+            /* Stack streaming controls on mobile */
+            .mobile-controls {
+                flex-direction: column;
+                gap: 0.75rem;
+            }
+            
+            /* Full-width streaming status on mobile */
+            .mobile-streaming-status {
+                order: -1;
+                margin-bottom: 1rem;
+            }
+            
+            /* Hide complex visual elements on small screens */
+            .mobile-hide {
+                display: none;
+            }
+            
+            /* Larger touch targets for mobile */
+            .mobile-button {
+                min-height: 48px;
+                font-size: 1rem;
+            }
+        }
+        
+        /* Streaming indicator animation */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .streaming-pulse {
+            animation: pulse 2s infinite;
+        }
     </style>
 </head>
 <body class="dark bg-gray-900 text-gray-100 min-h-screen">
@@ -104,39 +151,64 @@
             <div class="bg-gray-800 rounded-lg shadow-lg p-6 mb-6 border border-gray-700">
                 <h2 class="text-2xl font-bold mb-4 text-gray-100">Sensor Capture</h2>
                 
-                <!-- Control Buttons -->
-                <div class="flex flex-wrap gap-3 mb-6">
-                    <button id="requestPermissionsBtn" class="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg font-medium">
-                        📱 Request Permissions
+                <!-- Live Streaming Controls -->
+                <div class="flex flex-wrap gap-3 mb-6 mobile-controls">
+                    <button id="startLiveStreamBtn" class="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg font-medium text-lg mobile-button w-full sm:w-auto">
+                        🚀 Start Live Stream
                     </button>
-                    <button id="captureSensorDataBtn" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-medium">
-                        📊 Capture Sensor Data
+                    <button id="stopLiveStreamBtn" class="bg-red-500 hover:bg-red-600 text-white px-6 py-3 rounded-lg font-medium text-lg mobile-button w-full sm:w-auto hidden">
+                        ⏸️ Stop Streaming
                     </button>
+                    <button id="captureSensorDataBtn" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-medium mobile-button w-full sm:w-auto">
+                        📊 Single Sample
+                    </button>
+                </div>
+
+                <!-- Streaming Status -->
+                <div id="streamingStatus" class="bg-gradient-to-r from-green-800 to-green-900 p-4 rounded-lg mb-4 border-2 border-green-600 hidden mobile-streaming-status">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="font-semibold text-gray-100 text-lg">📡 Live Streaming</h3>
+                        <div class="flex items-center">
+                            <div id="streamingIndicator" class="w-4 h-4 bg-green-400 rounded-full streaming-pulse mr-2"></div>
+                            <span id="streamingRate" class="text-sm text-gray-200 font-medium">Every 5s</span>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4 text-sm">
+                        <div class="text-center">
+                            <div class="text-gray-300">Samples Sent</div>
+                            <div id="samplesSent" class="text-2xl font-bold text-blue-300">0</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-gray-300">Connection</div>
+                            <div id="connectionStatus" class="text-2xl font-bold text-green-300">●</div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Status Display -->
                 <div id="statusDisplay" class="bg-gray-700 p-3 rounded-lg mb-4 border border-gray-600">
                     <div class="text-sm text-gray-300">Status: <span id="statusText" class="font-medium text-gray-100">Ready</span></div>
                     <div class="text-sm text-gray-300">Records: <span id="recordCount" class="font-medium text-gray-100">0</span></div>
+                    <div class="text-sm text-gray-300">Streaming: <span id="streamingStatusText" class="font-medium text-gray-100">Inactive</span></div>
                 </div>
 
                 <!-- Live Sensor Data -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 mobile-sensor-grid">
                     <!-- GPS Data -->
                     <div class="bg-blue-900 p-4 rounded-lg border border-blue-800">
-                        <h3 class="font-semibold text-blue-200 mb-2">📍 GPS Location</h3>
+                        <h3 class="font-semibold text-blue-200 mb-2">📍 GPS</h3>
                         <div id="gpsData" class="sensor-data text-sm text-gray-300">
-                            <div>Latitude: <span id="latitude">--</span></div>
-                            <div>Longitude: <span id="longitude">--</span></div>
-                            <div>Altitude: <span id="altitude">--</span> m</div>
-                            <div>Speed: <span id="speed">--</span> m/s</div>
+                            <div>Lat: <span id="latitude">--</span></div>
+                            <div>Lon: <span id="longitude">--</span></div>
+                            <div class="mobile-hide">Altitude: <span id="altitude">--</span> m</div>
+                            <div class="mobile-hide">Speed: <span id="speed">--</span> m/s</div>
                             <div>Accuracy: <span id="accuracy">--</span> m</div>
                         </div>
                     </div>
 
                     <!-- Orientation Data -->
                     <div class="bg-green-900 p-4 rounded-lg border border-green-800">
-                        <h3 class="font-semibold text-green-200 mb-2">🧭 Device Orientation</h3>
+                        <h3 class="font-semibold text-green-200 mb-2">🧭 Orientation</h3>
                         <div class="flex gap-4">
                             <!-- Numeric data -->
                             <div id="orientationData" class="sensor-data text-sm flex-1 text-gray-300">
@@ -145,8 +217,8 @@
                                 <div>Gamma: <span id="gamma">--</span>°</div>
                                 <div>Compass: <span id="compass">--</span>°</div>
                             </div>
-                            <!-- Visual orientation indicator -->
-                            <div class="flex-shrink-0">
+                            <!-- Visual orientation indicator - hidden on mobile -->
+                            <div class="flex-shrink-0 mobile-hide">
                                 <div class="text-xs text-gray-400 mb-1 text-center">Orientation</div>
                                 <svg id="orientationVisual" width="80" height="80" viewBox="0 0 80 80" class="border border-gray-600 rounded bg-gray-800">
                                     <!-- Device representation -->
@@ -168,7 +240,7 @@
 
                     <!-- Motion Data -->
                     <div class="bg-yellow-900 p-4 rounded-lg border border-yellow-800">
-                        <h3 class="font-semibold text-yellow-200 mb-2">🏃 Motion Sensors</h3>
+                        <h3 class="font-semibold text-yellow-200 mb-2">🏃 Motion</h3>
                         <div id="motionData" class="sensor-data text-sm text-gray-300">
                             <div>Accel X: <span id="accelX">--</span></div>
                             <div>Accel Y: <span id="accelY">--</span></div>
@@ -180,12 +252,12 @@
                     <div class="bg-purple-900 p-4 rounded-lg border border-purple-800">
                         <h3 class="font-semibold text-purple-200 mb-2">🌤️ Weather</h3>
                         <div id="weatherData" class="sensor-data text-sm text-gray-300">
-                            <div>Temperature: <span id="temperature">--</span>°C</div>
+                            <div>Temp: <span id="temperature">--</span>°C</div>
                             <div>Humidity: <span id="humidity">--</span>%</div>
-                            <div>Wind Speed: <span id="windSpeed">--</span> km/h</div>
-                            <div>Conditions: <span id="conditions">--</span></div>
+                            <div class="mobile-hide">Wind: <span id="windSpeed">--</span> km/h</div>
+                            <div class="mobile-hide">Conditions: <span id="conditions">--</span></div>
                         </div>
-                        <div class="mt-2 pt-2 border-t border-purple-700">
+                        <div class="mt-2 pt-2 border-t border-purple-700 mobile-hide">
                             <div id="weatherStatus" class="text-xs text-gray-400">Waiting for location...</div>
                             <div id="weatherAccuracy" class="text-xs text-gray-400">No Data</div>
                         </div>
@@ -355,6 +427,73 @@
                     <div id="wsStatus" class="hidden bg-gray-900 border border-gray-700 rounded p-3 text-sm">
                         <div class="font-semibold mb-1 text-gray-200">Connection Status</div>
                         <div id="wsStatusText" class="text-gray-400">Not configured</div>
+                    </div>
+                </div>
+
+                <!-- Streaming Configuration -->
+                <div class="mb-6">
+                    <h3 class="text-xl font-semibold mb-2 text-gray-200">📡 Live Streaming Configuration</h3>
+                    <p class="text-sm text-gray-400 mb-3">
+                        Configure how often data is captured and what types of data to include when streaming.
+                    </p>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-2 text-gray-300">Capture Interval</label>
+                            <select id="captureInterval" class="w-full border border-gray-600 bg-gray-700 text-gray-200 rounded px-3 py-2 text-sm">
+                                <option value="1000">1 second (High Frequency)</option>
+                                <option value="2000">2 seconds</option>
+                                <option value="5000" selected>5 seconds (Default)</option>
+                                <option value="10000">10 seconds</option>
+                                <option value="30000">30 seconds</option>
+                                <option value="60000">1 minute (Low Frequency)</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium mb-2 text-gray-300">Data Mode</label>
+                            <select id="dataMode" class="w-full border border-gray-600 bg-gray-700 text-gray-200 rounded px-3 py-2 text-sm">
+                                <option value="full">Full Data (GPS + Sensors + Weather)</option>
+                                <option value="sensors">Sensors Only (GPS + Orientation + Motion)</option>
+                                <option value="gps" selected>GPS Only (Lightweight)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-2 text-gray-300">Data Options</label>
+                        <div class="space-y-2">
+                            <label class="flex items-center">
+                                <input type="checkbox" id="includeWeather" class="mr-2" checked>
+                                <span class="text-gray-300">Include weather data (1x per minute)</span>
+                            </label>
+                            <label class="flex items-center">
+                                <input type="checkbox" id="includeMedia" class="mr-2">
+                                <span class="text-gray-300">Include photos/audio (increases data usage)</span>
+                            </label>
+                            <label class="flex items-center">
+                                <input type="checkbox" id="highAccuracyGPS" class="mr-2" checked>
+                                <span class="text-gray-300">High accuracy GPS (uses more battery)</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-3 mb-4">
+                        <button id="saveStreamingConfigBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm">
+                            💾 Save Streaming Config
+                        </button>
+                        <button id="resetStreamingConfigBtn" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded text-sm">
+                            🔄 Reset to Default
+                        </button>
+                    </div>
+
+                    <div class="bg-gray-900 border border-gray-700 rounded p-3 text-xs text-gray-400">
+                        <div class="font-semibold mb-1">Data Usage Estimates (per hour):</div>
+                        <div id="dataUsageEstimate">
+                            <div>GPS Only (5s): ~300KB/hour</div>
+                            <div>Full Sensors (5s): ~600KB/hour</div>
+                            <div>With Photos: +500KB-2MB per capture</div>
+                        </div>
                     </div>
                 </div>
 
