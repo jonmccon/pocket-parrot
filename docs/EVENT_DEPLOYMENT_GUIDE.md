@@ -142,9 +142,25 @@ console.log(eventUrl);
 ```
 
 Result:
-```
 https://your-site.com/pocket-parrot/?ws=wss%3A%2F%2Fyour-server.com%2Fevent&autoEnable=true&eventMode=true&eventName=Tech%20Conference%202024&autoStart=true
+
+
+```javascript
+// Base URL
+const baseUrl = 'https://jonmccon.github.io/pocket-parrot/';
+
+// WebSocket endpoint (use wss:// for cellular compatibility)
+const wsEndpoint = 'wss://pocket-parrot-server-dbba4de2cef6.herokuapp.com/event';
+
+// Event details
+const eventName = 'SeaAiCon';
+
+// Build URL
+const eventUrl = `${baseUrl}?ws=${encodeURIComponent(wsEndpoint)}&autoEnable=true&eventMode=true&eventName=${encodeURIComponent(eventName)}&autoStart=true`;
+
+console.log(eventUrl);
 ```
+
 
 ### Step 5: Generate QR Code
 

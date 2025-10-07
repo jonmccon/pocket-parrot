@@ -138,7 +138,13 @@
             <div class="stat-card">
                 <h2 class="text-xl font-bold mb-4 flex items-center justify-between">
                     <span>👥 Active Connections</span>
-                    <span class="text-sm font-normal text-gray-400" id="connectionCount">0/25</span>
+                    <div class="flex items-center gap-4">
+                        <button id="demoteButton" onclick="demoteCurrentSender()" 
+                                class="px-3 py-1 text-xs bg-orange-600 hover:bg-orange-700 text-white rounded transition-colors hidden">
+                            Demote Active Sender
+                        </button>
+                        <span class="text-sm font-normal text-gray-400" id="connectionCount">0/25</span>
+                    </div>
                 </h2>
                 <div id="userList" class="max-h-96 overflow-y-auto">
                     <div class="text-gray-500 text-center py-8">No active connections</div>
@@ -241,6 +247,36 @@
             document.getElementById('statusText').textContent = text;
         }
 
+        // User management functions
+        function kickUser(userId) {
+            if (confirm('Are you sure you want to kick this user?')) {
+                console.log('Kicking user:', userId);
+                ws.send(JSON.stringify({
+                    type: 'kickUser',
+                    userId: userId
+                }));
+            }
+        }
+
+        function promoteUser(userId) {
+            if (confirm('Promote this user to active sender?')) {
+                console.log('Promoting user:', userId);
+                ws.send(JSON.stringify({
+                    type: 'promoteUser',
+                    userId: userId
+                }));
+            }
+        }
+
+        function demoteCurrentSender() {
+            if (confirm('Demote the current active sender?')) {
+                console.log('Demoting current active sender');
+                ws.send(JSON.stringify({
+                    type: 'demoteUser'
+                }));
+            }
+        }
+
         function handleMessage(message) {
             switch (message.type) {
                 case 'stats':
@@ -255,8 +291,20 @@
                 case 'dataReceived':
                     addLog('data', `Data from ${message.userId}: ${message.pointNumber} points`);
                     break;
+                case 'userKicked':
+                    addLog('error', `User ${message.userId} was kicked from the server`);
+                    break;
+                case 'userPromoted':
+                    addLog('connect', `User ${message.userId} promoted to active sender`);
+                    break;
+                case 'userDemoted':
+                    addLog('disconnect', `Active sender was demoted`);
+                    break;
                 case 'error':
                     addLog('error', message.message);
+                    break;
+                default:
+                    console.log('Unknown message type:', message.type, message);
                     break;
             }
         }
@@ -276,31 +324,55 @@
             document.getElementById('uptime').textContent = 
                 `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
             
-            // Update user list
+            // Update user list with controls
             if (stats.users && stats.users.length > 0) {
-                const userListHtml = stats.users.map(user => `
-                    <div class="user-item">
-                        <div class="flex justify-between items-start">
-                            <div>
-                                <div class="font-semibold text-blue-400">${user.id}</div>
-                                <div class="text-xs text-gray-400 mt-1">
-                                    Connected: ${formatTime(user.connectedAt)}
+                // Check if there's an active sender to show/hide demote button
+                const hasActiveSender = stats.users.some(user => user.isActiveSender);
+                const demoteButton = document.getElementById('demoteButton');
+                if (hasActiveSender) {
+                    demoteButton.classList.remove('hidden');
+                } else {
+                    demoteButton.classList.add('hidden');
+                }
+                
+                const userListHtml = stats.users.map(user => {
+                    const isActive = user.isActiveSender ? ' [ACTIVE SENDER]' : '';
+                    const lastData = user.lastData ? new Date(user.lastData).toLocaleTimeString() : 'Never';
+                    
+                    return `
+                        <div class="user-item">
+                            <div class="flex justify-between items-center">
+                                <div class="flex-1">
+                                    <div class="font-semibold ${user.isActiveSender ? 'text-yellow-400' : 'text-blue-400'}">
+                                        ${user.username || user.id}${isActive}
+                                    </div>
+                                    <div class="text-xs text-gray-400 mt-1 space-y-1">
+                                        <div>Connected: ${formatTime(user.connectedAt)}</div>
+                                        <div>Last Data: ${lastData} | Points: ${user.dataCount}</div>
+                                        <div>IP: ${user.ip || 'Unknown'} | Device: ${user.deviceId || 'Unknown'}</div>
+                                    </div>
+                                </div>
+                                <div class="flex flex-col gap-1 ml-4">
+                                    ${!user.isActiveSender ? 
+                                        `<button onclick="promoteUser('${user.id}')" 
+                                                class="px-3 py-1 text-xs bg-green-600 hover:bg-green-700 text-white rounded transition-colors">
+                                            Promote
+                                        </button>` : 
+                                        ''
+                                    }
+                                    <button onclick="kickUser('${user.id}')" 
+                                            class="px-3 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded transition-colors">
+                                        Kick
+                                    </button>
                                 </div>
                             </div>
-                            <div class="text-right">
-                                <div class="text-green-400 font-bold">${user.dataCount}</div>
-                                <div class="text-xs text-gray-400">points</div>
-                            </div>
                         </div>
-                        ${user.lastData ? `
-                            <div class="mt-2 text-xs text-gray-500">
-                                Last: ${formatTime(user.lastData)}
-                            </div>
-                        ` : ''}
-                    </div>
-                `).join('');
+                    `;
+                }).join('');
                 document.getElementById('userList').innerHTML = userListHtml;
             } else {
+                // Hide demote button when no users
+                document.getElementById('demoteButton').classList.add('hidden');
                 document.getElementById('userList').innerHTML = 
                     '<div class="text-gray-500 text-center py-8">No active connections</div>';
             }
