@@ -249,31 +249,49 @@
 
         // User management functions
         function kickUser(userId) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                alert('Not connected to server');
+                return;
+            }
             if (confirm('Are you sure you want to kick this user?')) {
                 console.log('Kicking user:', userId);
                 ws.send(JSON.stringify({
                     type: 'kickUser',
                     userId: userId
                 }));
+                // Add immediate feedback since server doesn't send confirmation
+                addLog('error', `Kick command sent for user ${userId}`);
             }
         }
 
         function promoteUser(userId) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                alert('Not connected to server');
+                return;
+            }
             if (confirm('Promote this user to active sender?')) {
                 console.log('Promoting user:', userId);
                 ws.send(JSON.stringify({
                     type: 'promoteUser',
                     userId: userId
                 }));
+                // Add immediate feedback - server will send senderPromoted message
+                addLog('connect', `Promotion command sent for user ${userId}`);
             }
         }
 
         function demoteCurrentSender() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                alert('Not connected to server');
+                return;
+            }
             if (confirm('Demote the current active sender?')) {
                 console.log('Demoting current active sender');
                 ws.send(JSON.stringify({
                     type: 'demoteUser'
                 }));
+                // Add immediate feedback since server doesn't send confirmation
+                addLog('disconnect', `Demote command sent for active sender`);
             }
         }
 
@@ -286,22 +304,15 @@
                     addLog('connect', `User ${message.userId} connected from ${message.ip || 'unknown'}`);
                     break;
                 case 'userDisconnected':
-                    addLog('disconnect', `User ${message.userId} disconnected (${message.dataCount} points sent)`);
+                    const wasActiveText = message.wasActiveSender ? ' [was active sender]' : '';
+                    addLog('disconnect', `User ${message.userId} disconnected (${message.dataCount} points sent)${wasActiveText}`);
                     break;
                 case 'dataReceived':
-                    addLog('data', `Data from ${message.userId}: ${message.pointNumber} points`);
+                    addLog('data', `Data from ${message.userId}: point #${message.pointNumber}`);
                     break;
-                case 'userKicked':
-                    addLog('error', `User ${message.userId} was kicked from the server`);
-                    break;
-                case 'userPromoted':
-                    addLog('connect', `User ${message.userId} promoted to active sender`);
-                    break;
-                case 'userDemoted':
-                    addLog('disconnect', `Active sender was demoted`);
-                    break;
-                case 'error':
-                    addLog('error', message.message);
+                case 'senderPromoted':
+                    const username = message.username || message.userId;
+                    addLog('connect', `User ${username} promoted to active sender`);
                     break;
                 default:
                     console.log('Unknown message type:', message.type, message);
