@@ -33,3 +33,6 @@ temp/
 # Cache files
 .cache/
 .parcel-cache/
+
+# event docs
+urls.md

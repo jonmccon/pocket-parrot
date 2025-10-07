@@ -1,0 +1,18 @@
+{
+  "name": "pocket-parrot-server",
+  "version": "1.0.0",
+  "description": "WebSocket server for Pocket Parrot events",
+  "main": "multi-user-server.js",
+  "scripts": {
+    "start": "node multi-user-server.js"
+  },
+  "engines": {
+    "node": "18.x"
+  },
+  "dependencies": {
+    "ws": "^8.14.0"
+  },
+  "keywords": ["websocket", "sensor-data", "pocket-parrot"],
+  "author": "",
+  "license": "MIT"
+}
