@@ -98,12 +98,7 @@ Note the app URL (e.g., `https://your-app-name.herokuapp.com`)
 
 ```bash
 git push heroku main
-```
-
-Or if you're on the `master` branch:
-
-```bash
-git push heroku master
+git subtree push --prefix backend heroku main
 ```
 
 ### Step 8: Verify Deployment
