@@ -5,6 +5,7 @@
  * 
  * Handles multiple concurrent connections but only allows one active data sender.
  * Other users become observers until the active sender disconnects or becomes inactive.
+ * Also supports passive broadcast listeners that receive data without participating in sessions.
  * 
  * Features:
  * - Single active data sender with automatic promotion
@@ -12,6 +13,7 @@
  * - Device fingerprinting to detect reconnections
  * - Dashboard monitoring with session management
  * - Real-time stats broadcasting
+ * - Passive broadcast listeners for data ingestion
  * 
  * Usage:
  *   node multi-user-server.js [port]
@@ -19,8 +21,9 @@
  * Default port: 8080
  * 
  * Endpoints:
- *   /pocket-parrot - Main data ingestion endpoint
+ *   /pocket-parrot - Main data ingestion endpoint (users/observers)
  *   /dashboard - Monitoring dashboard endpoint
+ *   /listener - Passive broadcast listener endpoint (data only, no session)
  */
 
 const WebSocket = require('ws');
@@ -34,6 +37,7 @@ const SENDER_TIMEOUT = 30000; // 30 seconds of no data = inactive
 // Store connected clients with metadata
 const clients = new Map();
 const dashboardClients = new Set();
+const passiveListeners = new Set(); // Passive broadcast-only listeners
 const deviceSessions = new Map(); // Track devices to prevent reconnections
 
 // Active sender management
@@ -60,6 +64,7 @@ console.log('='.repeat(60));
 console.log(`📡 Listening on port ${port}`);
 console.log(`🔗 Data endpoint: ws://YOUR_IP:${port}/pocket-parrot`);
 console.log(`📊 Dashboard endpoint: ws://YOUR_IP:${port}/dashboard`);
+console.log(`📻 Listener endpoint: ws://YOUR_IP:${port}/listener`);
 console.log(`👥 Max users: ${MAX_USERS} (single active sender)`);
 console.log(`⏱️  Sender timeout: ${SENDER_TIMEOUT/1000}s`);
 console.log('');
@@ -98,6 +103,36 @@ wss.on('connection', (ws, req) => {
     ws.on('close', () => {
       console.log('📊 Dashboard disconnected');
       dashboardClients.delete(ws);
+    });
+    
+    return;
+  }
+  
+  // Passive listener connection - broadcast-only, no user/observer role
+  if (pathname === '/listener') {
+    console.log('📻 Passive listener connected');
+    console.log(`   IP Address: ${req.socket.remoteAddress}`);
+    console.log(`   Total listeners: ${passiveListeners.size + 1}`);
+    console.log('');
+    
+    passiveListeners.add(ws);
+    
+    // Send welcome message
+    ws.send(JSON.stringify({
+      type: 'listener_connected',
+      message: 'Connected as passive broadcast listener',
+      timestamp: new Date().toISOString()
+    }));
+    
+    ws.on('close', () => {
+      console.log('📻 Passive listener disconnected');
+      console.log(`   Total listeners: ${passiveListeners.size - 1}`);
+      console.log('');
+      passiveListeners.delete(ws);
+    });
+    
+    ws.on('error', (error) => {
+      console.error('❌ Passive listener error:', error.message);
     });
     
     return;
@@ -285,6 +320,15 @@ wss.on('connection', (ws, req) => {
         
         // Ingest the data
         ingestData(clientId, data.data, client);
+        
+        // Broadcast sensor data to passive listeners
+        broadcastToListeners({
+          type: 'sensor_data',
+          timestamp: new Date().toISOString(),
+          userId: clientId,
+          username: client.username,
+          data: data.data
+        });
         
         // Notify dashboards
         broadcastToDashboards({
@@ -580,6 +624,18 @@ function broadcastToDashboards(message) {
 }
 
 /**
+ * Broadcast message to all passive listeners
+ */
+function broadcastToListeners(message) {
+  const messageStr = JSON.stringify(message);
+  passiveListeners.forEach(ws => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(messageStr);
+    }
+  });
+}
+
+/**
  * Send stats to a specific client
  */
 function sendStatsToClient(ws) {
@@ -591,14 +647,20 @@ function sendStatsToClient(ws) {
 }
 
 /**
- * Broadcast stats to all dashboard clients
+ * Broadcast stats to all dashboard clients and passive listeners
  */
 function broadcastStats() {
   const stats = getStats();
-  broadcastToDashboards({
+  const statsMessage = {
     type: 'stats',
     data: stats
-  });
+  };
+  
+  // Send to dashboards
+  broadcastToDashboards(statsMessage);
+  
+  // Send to passive listeners
+  broadcastToListeners(statsMessage);
 }
 
 /**
@@ -627,6 +689,7 @@ function getStats() {
   
   return {
     activeUsers: clients.size,
+    passiveListeners: passiveListeners.size,
     activeSender: activeDataSender,
     totalDataPoints: totalDataPoints,
     dataRate: dataPointsLastMinute,
@@ -637,9 +700,10 @@ function getStats() {
 
 // Status reporting - prints server statistics every minute
 setInterval(() => {
-  if (clients.size > 0) {
+  if (clients.size > 0 || passiveListeners.size > 0) {
     console.log('📊 Server Status Report:');
     console.log(`   Connected users: ${clients.size}/${MAX_USERS}`);
+    console.log(`   Passive listeners: ${passiveListeners.size}`);
     console.log(`   Active sender: ${activeDataSender || 'none'}`);
     
     let totalData = 0;
@@ -671,7 +735,7 @@ wss.on('error', (error) => {
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\n🛑 Shutting down server...');
-  console.log(`   Disconnecting ${clients.size} users and ${dashboardClients.size} dashboards...`);
+  console.log(`   Disconnecting ${clients.size} users, ${dashboardClients.size} dashboards, and ${passiveListeners.size} listeners...`);
   
   clearSenderTimeout();
   
@@ -684,6 +748,14 @@ process.on('SIGINT', () => {
   });
   
   dashboardClients.forEach(ws => {
+    ws.close();
+  });
+  
+  passiveListeners.forEach(ws => {
+    ws.send(JSON.stringify({
+      type: 'server_shutdown',
+      message: 'Server is shutting down'
+    }));
     ws.close();
   });
   
