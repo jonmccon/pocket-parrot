@@ -1,15 +1,15 @@
 
 
 # Base app url
-https://pocket-parrot-server-dbba4de2cef6.herokuapp.com/
+https://pocket-parrot-backend-eb141a6427d7.herokuapp.com/
 
 
 # Dashboard access
-https://jonmccon.github.io/pocket-parrot/dashboard.html?server=wss://pocket-parrot-server-dbba4de2cef6.herokuapp.com/dashboard
+https://jonmccon.github.io/pocket-parrot/dashboard.html?server=wss:///pocket-parrot-backend-eb141a6427d7.herokuapp.com/dashboard
 
 
 # Full Example Event URL:  
-https://jonmccon.github.io/pocket-parrot/?ws=wss%3A%2F%2Fpocket-parrot-server-dbba4de2cef6.herokuapp.com%2Fevent&autoEnable=true&eventMode=true&eventName=SeaAiWk&autoStart=true
+https://jonmccon.github.io/pocket-parrot/?ws=wss%3A%2F%2F/pocket-parrot-backend-eb141a6427d7.herokuapp.com%2Fevent&autoEnable=true&eventMode=true&eventName=SeaAiWk&autoStart=true
 
 
 
