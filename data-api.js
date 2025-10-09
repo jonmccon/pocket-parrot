@@ -27,12 +27,12 @@ class PocketParrotDataAPI {
         this.app.saveDataPoint = async (dataPoint) => {
             const result = await originalSaveDataPoint(dataPoint);
             
-            // Notify all subscribers
-            this.notifySubscribers(dataPoint);
+            // Notify all subscribers (await to ensure data is prepared)
+            await this.notifySubscribers(dataPoint);
             
             // Push to WebSocket if enabled
             if (this.wsEnabled && this.wsEndpoint) {
-                this.pushToWebSocket(dataPoint);
+                await this.pushToWebSocket(dataPoint);
             }
             
             return result;
@@ -62,9 +62,22 @@ class PocketParrotDataAPI {
     /**
      * Notify all subscribers of new data
      */
-    notifySubscribers(dataPoint) {
+    async notifySubscribers(dataPoint) {
         // Create a safe copy without blob data for notifications
-        const safeDataPoint = this.prepareSafeDataPoint(dataPoint);
+        const safeDataPoint = await this.prepareSafeDataPoint(dataPoint);
+        
+        console.log('📢 Notifying subscribers with data:', {
+            timestamp: safeDataPoint.timestamp,
+            hasGPS: !!safeDataPoint.gps,
+            gpsValues: safeDataPoint.gps ? {
+                lat: safeDataPoint.gps.latitude,
+                lon: safeDataPoint.gps.longitude
+            } : null,
+            hasOrientation: !!safeDataPoint.orientation,
+            hasMotion: !!safeDataPoint.motion,
+            hasWeather: !!safeDataPoint.weather,
+            hasPhoto: !!safeDataPoint.photoBase64
+        });
         
         this.subscribers.forEach(callback => {
             try {
@@ -321,17 +334,43 @@ class PocketParrotDataAPI {
             // Prepare safe data point
             const safeDataPoint = await this.prepareSafeDataPoint(dataPoint);
             
+            console.log('📤 Preparing to push data to WebSocket:', {
+                timestamp: safeDataPoint.timestamp,
+                hasGPS: !!safeDataPoint.gps,
+                gpsValues: safeDataPoint.gps ? {
+                    lat: safeDataPoint.gps.latitude,
+                    lon: safeDataPoint.gps.longitude,
+                    alt: safeDataPoint.gps.altitude,
+                    accuracy: safeDataPoint.gps.accuracy
+                } : null,
+                hasOrientation: !!safeDataPoint.orientation,
+                orientationValues: safeDataPoint.orientation ? {
+                    alpha: safeDataPoint.orientation.alpha,
+                    beta: safeDataPoint.orientation.beta,
+                    gamma: safeDataPoint.orientation.gamma
+                } : null,
+                hasMotion: !!safeDataPoint.motion,
+                motionValues: safeDataPoint.motion,
+                hasWeather: !!safeDataPoint.weather,
+                weatherValues: safeDataPoint.weather,
+                hasPhoto: !!safeDataPoint.photoBase64,
+                photoSize: safeDataPoint.photoBase64 ? `${Math.round(safeDataPoint.photoBase64.length / 1024)}KB` : 'N/A',
+                objectCount: safeDataPoint.objectsDetected?.length || 0
+            });
+            
             const message = JSON.stringify({
                 type: 'data',
                 timestamp: new Date().toISOString(),
                 data: safeDataPoint
             });
             
+            console.log('📤 Message size:', Math.round(message.length / 1024), 'KB');
+            
             // Send to all active connections
             this.wsConnections.forEach(ws => {
                 if (ws.readyState === WebSocket.OPEN) {
                     ws.send(message);
-                    console.log('📤 Data pushed to WebSocket');
+                    console.log('✅ Data pushed to WebSocket successfully');
                 }
             });
         } catch (error) {

@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Transmission Test - Pocket Parrot</title>
+    <style>
+        body {
+            font-family: monospace;
+            background: #1a1a1a;
+            color: #00ff00;
+            padding: 20px;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        h1 { color: #00ff00; }
+        .section { 
+            background: #2a2a2a; 
+            padding: 15px; 
+            margin: 15px 0;
+            border-left: 4px solid #00ff00;
+        }
+        button {
+            background: #00ff00;
+            color: #1a1a1a;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            font-family: monospace;
+            font-weight: bold;
+        }
+        button:hover {
+            background: #00cc00;
+        }
+        #output {
+            background: #0a0a0a;
+            padding: 15px;
+            border: 1px solid #00ff00;
+            margin-top: 20px;
+            height: 400px;
+            overflow-y: auto;
+            font-size: 12px;
+        }
+        .success { color: #00ff00; }
+        .error { color: #ff0000; }
+        .info { color: #00aaff; }
+        .warning { color: #ffaa00; }
+    </style>
+</head>
+<body>
+    <h1>🦜 Data Transmission Test - Async Fix Validation</h1>
+    
+    <div class="section">
+        <h3>Test: Verify async data preparation works correctly</h3>
+        <p>This test validates that data is properly prepared before being sent to subscribers and WebSocket.</p>
+        <button onclick="runTest()">Run Test</button>
+        <button onclick="clearOutput()">Clear Output</button>
+    </div>
+    
+    <div class="section">
+        <h3>Test Output</h3>
+        <div id="output"></div>
+    </div>
+    
+    <!-- Load Pocket Parrot dependencies -->
+    <script src="app.js"></script>
+    <script src="data-api.js"></script>
+    
+    <script>
+        function log(msg, type = 'info') {
+            const output = document.getElementById('output');
+            const time = new Date().toLocaleTimeString();
+            const className = type;
+            output.innerHTML += `<div class="${className}">[${time}] ${msg}</div>`;
+            output.scrollTop = output.scrollHeight;
+        }
+        
+        function clearOutput() {
+            document.getElementById('output').innerHTML = '';
+        }
+        
+        async function runTest() {
+            log('=== Starting Data Transmission Test ===', 'info');
+            log('', 'info');
+            
+            // Wait for Pocket Parrot to initialize
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Test 1: Check if API is available
+            log('Test 1: Checking API availability...', 'info');
+            if (typeof window.pocketParrotAPI === 'undefined') {
+                log('❌ FAIL: API not available', 'error');
+                return;
+            }
+            log('✅ PASS: API is available', 'success');
+            log('', 'info');
+            
+            // Test 2: Subscribe to data updates
+            log('Test 2: Setting up data subscriber...', 'info');
+            let receivedData = null;
+            const unsubscribe = window.pocketParrotAPI.subscribe((dataPoint) => {
+                receivedData = dataPoint;
+                log('📊 Subscriber received data!', 'success');
+                log('   Type: ' + typeof dataPoint, 'info');
+                log('   Is Promise: ' + (dataPoint instanceof Promise ? 'YES ❌' : 'NO ✅'), dataPoint instanceof Promise ? 'error' : 'success');
+                log('   Has timestamp: ' + (!!dataPoint.timestamp), 'info');
+                log('   Has GPS: ' + (!!dataPoint.gps), 'info');
+                if (dataPoint.gps) {
+                    log('   GPS Latitude: ' + dataPoint.gps.latitude + ' (type: ' + typeof dataPoint.gps.latitude + ')', 'info');
+                    log('   GPS Longitude: ' + dataPoint.gps.longitude + ' (type: ' + typeof dataPoint.gps.longitude + ')', 'info');
+                    
+                    // Check if values are zero (the bug symptom)
+                    if (dataPoint.gps.latitude === 0 && dataPoint.gps.longitude === 0) {
+                        log('   ⚠️  WARNING: GPS values are zero! This might be the bug!', 'warning');
+                    }
+                }
+                if (dataPoint.orientation) {
+                    log('   Orientation Alpha: ' + dataPoint.orientation.alpha, 'info');
+                }
+            });
+            log('✅ Subscriber set up', 'success');
+            log('', 'info');
+            
+            // Test 3: Create a mock data point with actual sensor values
+            log('Test 3: Creating mock data point with non-zero values...', 'info');
+            const mockDataPoint = {
+                timestamp: new Date().toISOString(),
+                gps: {
+                    latitude: 47.6062,  // Seattle coordinates
+                    longitude: -122.3321,
+                    altitude: 100,
+                    accuracy: 10,
+                    speed: 5,
+                    heading: 90
+                },
+                orientation: {
+                    alpha: 45,
+                    beta: 30,
+                    gamma: 15
+                },
+                motion: {
+                    accelerationX: 0.5,
+                    accelerationY: 0.3,
+                    accelerationZ: 9.8
+                },
+                weather: {
+                    temperature: 15,
+                    humidity: 70,
+                    windSpeed: 10
+                },
+                objectsDetected: [],
+                photoBlob: null,
+                audioBlob: null
+            };
+            log('Mock data created with:', 'info');
+            log('  GPS: ' + mockDataPoint.gps.latitude + ', ' + mockDataPoint.gps.longitude, 'info');
+            log('  Orientation: α=' + mockDataPoint.orientation.alpha + '°', 'info');
+            log('', 'info');
+            
+            // Test 4: Simulate data capture
+            log('Test 4: Simulating data capture...', 'info');
+            log('Calling app.saveDataPoint() which should trigger subscriber...', 'info');
+            
+            // We need to call the app's saveDataPoint directly
+            if (window.app && window.app.saveDataPoint) {
+                try {
+                    await window.app.saveDataPoint(mockDataPoint);
+                    log('✅ Data point saved', 'success');
+                } catch (error) {
+                    log('❌ Error saving data point: ' + error.message, 'error');
+                }
+            } else {
+                log('❌ app.saveDataPoint not available - app not initialized', 'error');
+            }
+            log('', 'info');
+            
+            // Test 5: Verify received data
+            await new Promise(resolve => setTimeout(resolve, 500)); // Wait for async operations
+            
+            log('Test 5: Verifying received data...', 'info');
+            if (receivedData === null) {
+                log('❌ FAIL: No data received by subscriber', 'error');
+            } else if (receivedData instanceof Promise) {
+                log('❌ FAIL: Subscriber received a Promise instead of data!', 'error');
+                log('   This is the BUG - notifySubscribers is not awaiting prepareSafeDataPoint', 'error');
+            } else {
+                log('✅ PASS: Subscriber received actual data (not a Promise)', 'success');
+                
+                // Verify data integrity
+                if (receivedData.gps && receivedData.gps.latitude === mockDataPoint.gps.latitude) {
+                    log('✅ PASS: GPS latitude matches (' + receivedData.gps.latitude + ')', 'success');
+                } else {
+                    log('❌ FAIL: GPS latitude does not match', 'error');
+                    log('   Expected: ' + mockDataPoint.gps.latitude, 'error');
+                    log('   Received: ' + (receivedData.gps ? receivedData.gps.latitude : 'undefined'), 'error');
+                }
+                
+                if (receivedData.gps && receivedData.gps.longitude === mockDataPoint.gps.longitude) {
+                    log('✅ PASS: GPS longitude matches (' + receivedData.gps.longitude + ')', 'success');
+                } else {
+                    log('❌ FAIL: GPS longitude does not match', 'error');
+                }
+                
+                if (receivedData.orientation && receivedData.orientation.alpha === mockDataPoint.orientation.alpha) {
+                    log('✅ PASS: Orientation alpha matches (' + receivedData.orientation.alpha + ')', 'success');
+                } else {
+                    log('❌ FAIL: Orientation alpha does not match', 'error');
+                }
+            }
+            log('', 'info');
+            
+            log('=== Test Complete ===', 'info');
+            
+            // Cleanup
+            unsubscribe();
+        }
+        
+        // Initialize message
+        window.addEventListener('load', () => {
+            log('🦜 Data Transmission Test Initialized', 'success');
+            log('Click "Run Test" to validate the async fix', 'info');
+            log('', 'info');
+        });
+    </script>
+</body>
+</html>
