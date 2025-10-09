@@ -27,6 +27,42 @@ Each user's phone runs Pocket Parrot in their browser, captures sensor data, and
 
 ---
 
+## Connection Types
+
+The multi-user server (`multi-user-server.js`) supports three types of connections:
+
+### 1. Active Users and Observers (`/pocket-parrot`)
+- **Purpose**: Primary data ingestion from Pocket Parrot mobile clients
+- **Behavior**: 
+  - One user is designated as the "active sender" who can transmit data
+  - All other users become "observers" who receive broadcasts but cannot send
+  - Automatic promotion when active sender disconnects or becomes inactive
+  - Session management with device fingerprinting
+  - User/observer-specific messaging (promotion, demotion, role changes)
+
+### 2. Dashboard Clients (`/dashboard`)
+- **Purpose**: Administrative monitoring and control
+- **Behavior**:
+  - Receive real-time statistics and user connection updates
+  - Can kick users, promote users, or demote active sender
+  - No data transmission capability
+
+### 3. Passive Broadcast Listeners (`/listener`) ⭐ NEW
+- **Purpose**: Third-party integrations that only need to receive data
+- **Behavior**:
+  - **Receive only**: Gets sensor data broadcasts and statistics
+  - **No session participation**: Not assigned user/observer roles
+  - **No session messages**: Does not receive user-specific messages like promotion, observer_mode, etc.
+  - **Ideal for**: Data visualization clients (e.g., p5.js sketches), analytics dashboards, logging systems
+
+**Use Cases for Passive Listeners:**
+- Real-time visualization applications (e.g., the-plot-quickens sketch)
+- Data analytics dashboards that aggregate from multiple events
+- External logging and monitoring systems
+- Third-party integrations that only need read access
+
+---
+
 ## Step-by-Step Setup
 
 ### Step 1: Create the WebSocket Server
@@ -727,6 +763,113 @@ function isValidSensorData(data) {
 - Log all connections and disconnections
 - Monitor data rates per user
 - Alert on suspicious patterns
+
+---
+
+## Passive Broadcast Listeners
+
+### Overview
+
+The `/listener` endpoint allows third-party applications to receive broadcasted sensor data without participating in the user/observer session management. This is ideal for:
+- Visualization dashboards (e.g., p5.js sketches)
+- Analytics and monitoring systems
+- Data logging applications
+- External integrations that only need read access
+
+### Connecting a Passive Listener
+
+**Example: p5.js Visualization Sketch**
+
+```javascript
+// Connect to the passive listener endpoint
+const ws = new WebSocket('ws://your-server.com:8080/listener');
+
+ws.onopen = () => {
+  console.log('Connected as passive listener');
+};
+
+ws.onmessage = (event) => {
+  const message = JSON.parse(event.data);
+  
+  if (message.type === 'listener_connected') {
+    console.log('Welcome message:', message.message);
+  }
+  
+  // Receive sensor data broadcasts
+  if (message.type === 'sensor_data') {
+    const sensorData = message.data;
+    console.log('Received data from:', message.username);
+    console.log('GPS:', sensorData.gps);
+    console.log('Orientation:', sensorData.orientation);
+    
+    // Update your visualization
+    updateVisualization(sensorData);
+  }
+  
+  // Receive server statistics
+  if (message.type === 'stats') {
+    console.log('Active users:', message.data.activeUsers);
+    console.log('Passive listeners:', message.data.passiveListeners);
+    console.log('Data rate:', message.data.dataRate, 'points/min');
+  }
+};
+
+ws.onerror = (error) => {
+  console.error('Connection error:', error);
+};
+
+ws.onclose = () => {
+  console.log('Disconnected from server');
+};
+```
+
+### Message Types Received by Passive Listeners
+
+| Message Type | Description | When Sent |
+|--------------|-------------|-----------|
+| `listener_connected` | Welcome message | On connection |
+| `sensor_data` | Broadcasted sensor data | When active sender transmits data |
+| `stats` | Server statistics | Periodically and on user events |
+| `server_shutdown` | Server shutdown notification | During graceful shutdown |
+
+**Note:** Passive listeners do NOT receive:
+- `promoted` / `demoted` messages
+- `observer_mode` messages
+- `sender_changed` messages
+- `ack` acknowledgments
+- User-specific session messages
+
+### Benefits of Passive Listeners
+
+1. **No interference**: Listeners don't affect user/observer sessions
+2. **Simple protocol**: Only receive data, no complex state management
+3. **Unlimited connections**: Not counted against user limits
+4. **Real-time updates**: Get data immediately as it's captured
+5. **Statistics included**: Know server state and data rates
+
+### Example Use Case: Real-time Map Visualization
+
+```javascript
+// the-plot-quickens sketch connecting as passive listener
+const ws = new WebSocket('ws://event-server.com:8080/listener');
+const userMarkers = new Map();
+
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  
+  if (msg.type === 'sensor_data' && msg.data.gps) {
+    // Create or update marker for this user
+    const userId = msg.userId;
+    const gps = msg.data.gps;
+    
+    if (!userMarkers.has(userId)) {
+      userMarkers.set(userId, createMarker(gps.latitude, gps.longitude));
+    } else {
+      updateMarker(userMarkers.get(userId), gps.latitude, gps.longitude);
+    }
+  }
+};
+```
 
 ---
 
