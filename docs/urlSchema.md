@@ -28,3 +28,10 @@ https://your-app.com/?ws=wss://server.com/track&interval=30000&dataMode=gps&even
 
 # Conference/event setup with branding
 https://your-app.com/?ws=wss://conf.com/sensors&eventName=AI Conference 2024&autoStart=true&eventMode=true
+
+
+
+📡 Listening on port 4544
+🔗 Data endpoint: ws://YOUR_IP:4544/pocket-parrot
+📊 Dashboard endpoint: ws://YOUR_IP:4544/dashboard
+📻 Listener endpoint: ws://YOUR_IP:4544/listener
