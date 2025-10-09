@@ -37,7 +37,7 @@ When receiving data through WebSocket at an external application (like a p5.js s
    - Make sure to click "Allow" when prompted for Location, Motion, Orientation
 
 3. **Verify Sensors Are Working:**
-   Open the diagnostic tool: `http://your-domain/diagnose-websocket.html`
+   Open the diagnostic tool: `https://your-domain/diagnose-websocket.html`
    
    Watch the browser console while clicking "Run Full Diagnostic". Look for:
    ```

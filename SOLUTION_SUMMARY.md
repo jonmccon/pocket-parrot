@@ -2,7 +2,7 @@
 
 ## Problem Statement
 
-User reported receiving empty/zero data values through WebSocket connection at the receiving end (p5.js sketch at jonmccon/the-plot-quickens):
+User reported receiving empty/zero data values through WebSocket connection at the receiving end (external p5.js sketch application):
 - GPS: latitude=0, longitude=0
 - Orientation: alpha=0, beta=0, gamma=0
 - Wind: speed=0, direction=0, gustSpeed=0
@@ -60,7 +60,7 @@ Interactive web tool to:
 - Verify message integrity
 - Display real-time statistics
 
-**Access:** Open `http://your-domain/diagnose-websocket.html`
+**Access:** Open `https://your-domain/diagnose-websocket.html` (use HTTPS for mobile sensor support)
 
 ### 3. Debugging Guide (`DEBUGGING_EMPTY_DATA.md`)
 Comprehensive troubleshooting guide covering:
@@ -89,7 +89,7 @@ Enhanced version of the receiving-end code with extensive logging:
 5. Check browser console for sensor values
 
 ### Step 2: Run Diagnostics
-1. Open `diagnose-websocket.html` on the mobile device
+1. Open `https://your-domain/diagnose-websocket.html` on the mobile device
 2. Click "Test Data Preparation Only"
 3. Verify "Data Inspection" shows real values (not zeros)
 4. If values are zeros here, sensors aren't providing data
@@ -102,7 +102,7 @@ Enhanced version of the receiving-end code with extensive logging:
 5. If zeros appear, note at which step they appear
 
 ### Step 4: Check Receiving End
-1. Open p5 sketch page (the-plot-quickens)
+1. Open the external p5 sketch page
 2. Replace `externalData.js` with `externalData-debug.js`
 3. Open browser console
 4. Look for detailed message logs
