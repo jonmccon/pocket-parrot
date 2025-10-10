@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Diagnostics - Pocket Parrot</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background: #1a1a1a;
+            color: #00ff00;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1, h2 { color: #00ff00; border-bottom: 2px solid #00ff00; padding-bottom: 10px; }
+        .section { 
+            background: #2a2a2a; 
+            padding: 20px; 
+            margin: 20px 0;
+            border-left: 4px solid #00ff00;
+            border-radius: 4px;
+        }
+        button {
+            background: #00ff00;
+            color: #1a1a1a;
+            border: none;
+            padding: 12px 24px;
+            margin: 5px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            font-size: 14px;
+            border-radius: 4px;
+            transition: all 0.3s;
+        }
+        button:hover { background: #00cc00; transform: translateY(-2px); }
+        button:disabled { background: #666; cursor: not-allowed; opacity: 0.5; }
+        .output {
+            background: #0a0a0a;
+            padding: 15px;
+            border: 1px solid #00ff00;
+            margin-top: 15px;
+            height: 300px;
+            overflow-y: auto;
+            font-size: 12px;
+            border-radius: 4px;
+        }
+        .success { color: #00ff00; }
+        .error { color: #ff0000; }
+        .info { color: #00aaff; }
+        .warning { color: #ffaa00; }
+        .data { color: #ff00ff; }
+        pre { 
+            background: #0a0a0a; 
+            padding: 10px; 
+            border-radius: 4px; 
+            overflow-x: auto;
+            border: 1px solid #333;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 15px 0;
+        }
+        .stat-box {
+            background: #0a0a0a;
+            padding: 15px;
+            border-left: 3px solid #00ff00;
+            border-radius: 4px;
+        }
+        .stat-label { font-size: 12px; opacity: 0.7; margin-bottom: 5px; }
+        .stat-value { font-size: 24px; font-weight: bold; color: #00ff00; }
+        input[type="text"] {
+            background: #0a0a0a;
+            color: #00ff00;
+            border: 1px solid #00ff00;
+            padding: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            width: calc(100% - 22px);
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .log-entry { 
+            padding: 3px 0; 
+            border-bottom: 1px solid #333;
+        }
+        .timestamp { opacity: 0.7; margin-right: 10px; }
+    </style>
+</head>
+<body>
+    <h1>🔍 WebSocket Data Transmission Diagnostics</h1>
+    
+    <div class="section">
+        <h2>📊 Purpose</h2>
+        <p>This diagnostic tool helps debug data transmission issues by:</p>
+        <ul>
+            <li>✅ Testing data capture with sensor values</li>
+            <li>✅ Monitoring data preparation (async/await flow)</li>
+            <li>✅ Tracking WebSocket transmission</li>
+            <li>✅ Logging all data transformations</li>
+            <li>✅ Comparing sent vs received data</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>🎛️ Controls</h2>
+        <button onclick="testFullFlow()" id="testBtn">Run Full Diagnostic</button>
+        <button onclick="testDataPreparation()">Test Data Preparation Only</button>
+        <button onclick="testWebSocketSend()">Test WebSocket Send</button>
+        <button onclick="clearAllLogs()">Clear All Logs</button>
+    </div>
+
+    <div class="section">
+        <h2>📈 Statistics</h2>
+        <div class="stats">
+            <div class="stat-box">
+                <div class="stat-label">Data Points Captured</div>
+                <div class="stat-value" id="captureCount">0</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Data Points Prepared</div>
+                <div class="stat-value" id="prepareCount">0</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">WebSocket Messages Sent</div>
+                <div class="stat-value" id="wsSentCount">0</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Preparation Time (avg)</div>
+                <div class="stat-value" id="avgPrepTime">0ms</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>📝 Diagnostic Log</h2>
+        <div class="output" id="diagnosticLog"></div>
+    </div>
+
+    <div class="section">
+        <h2>🔬 Data Inspection</h2>
+        <div class="output" id="dataInspection"></div>
+    </div>
+
+    <div class="section">
+        <h2>🌐 WebSocket Configuration</h2>
+        <input type="text" id="wsEndpoint" placeholder="WebSocket endpoint (e.g., wss://your-server.com/pocket-parrot)" value="wss://pocket-parrot-backend-eb141a6427d7.herokuapp.com/pocket-parrot">
+        <button onclick="configureWebSocket()">Configure WebSocket</button>
+        <button onclick="enableWebSocket()" id="enableWsBtn">Enable WebSocket</button>
+        <button onclick="disableWebSocket()" id="disableWsBtn" disabled>Disable WebSocket</button>
+    </div>
+
+    <!-- Load Pocket Parrot dependencies -->
+    <script src="app.js"></script>
+    <script src="data-api.js"></script>
+    
+    <script>
+        // Stats tracking
+        let stats = {
+            captureCount: 0,
+            prepareCount: 0,
+            wsSentCount: 0,
+            prepareTimes: []
+        };
+
+        // Intercept console.log to capture API logs
+        const originalConsoleLog = console.log;
+        const capturedLogs = [];
+
+        function log(msg, type = 'info', target = 'diagnosticLog') {
+            const output = document.getElementById(target);
+            const time = new Date().toLocaleTimeString();
+            const className = type;
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${className}`;
+            entry.innerHTML = `<span class="timestamp">[${time}]</span>${msg}`;
+            output.insertBefore(entry, output.firstChild);
+            
+            // Keep only last 100 entries
+            while (output.children.length > 100) {
+                output.removeChild(output.lastChild);
+            }
+        }
+
+        function inspect(label, data) {
+            const output = document.getElementById('dataInspection');
+            const time = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = 'log-entry data';
+            entry.innerHTML = `<span class="timestamp">[${time}]</span><strong>${label}:</strong><pre>${JSON.stringify(data, (key, value) => {
+                if (value instanceof Blob) return `[Blob: ${value.size} bytes]`;
+                if (typeof value === 'string' && value.startsWith('data:image')) return `[Base64 Image: ${value.length} chars]`;
+                return value;
+            }, 2)}</pre>`;
+            output.insertBefore(entry, output.firstChild);
+            
+            // Keep only last 10 inspections
+            while (output.children.length > 10) {
+                output.removeChild(output.lastChild);
+            }
+        }
+
+        function updateStats() {
+            document.getElementById('captureCount').textContent = stats.captureCount;
+            document.getElementById('prepareCount').textContent = stats.prepareCount;
+            document.getElementById('wsSentCount').textContent = stats.wsSentCount;
+            
+            if (stats.prepareTimes.length > 0) {
+                const avg = stats.prepareTimes.reduce((a, b) => a + b, 0) / stats.prepareTimes.length;
+                document.getElementById('avgPrepTime').textContent = Math.round(avg) + 'ms';
+            }
+        }
+
+        function clearAllLogs() {
+            document.getElementById('diagnosticLog').innerHTML = '';
+            document.getElementById('dataInspection').innerHTML = '';
+            log('Logs cleared', 'info');
+        }
+
+        async function testDataPreparation() {
+            log('=== Testing Data Preparation ===', 'info');
+            
+            const mockDataPoint = {
+                timestamp: new Date().toISOString(),
+                gps: {
+                    latitude: 47.6062,
+                    longitude: -122.3321,
+                    altitude: 100,
+                    accuracy: 10,
+                    speed: 5,
+                    heading: 90
+                },
+                orientation: {
+                    alpha: 45.5,
+                    beta: 30.2,
+                    gamma: 15.8
+                },
+                motion: {
+                    accelerationX: 0.5,
+                    accelerationY: 0.3,
+                    accelerationZ: 9.8
+                },
+                weather: {
+                    temperature: 15.5,
+                    humidity: 70,
+                    windSpeed: 10.2
+                },
+                objectsDetected: [
+                    { class: 'person', score: 0.95, bbox: [10, 20, 100, 200] }
+                ],
+                photoBlob: null,
+                audioBlob: null
+            };
+
+            inspect('Original Data Point', mockDataPoint);
+            log('Created mock data point with sensor values', 'success');
+            
+            if (window.pocketParrotAPI) {
+                log('Testing prepareSafeDataPoint() method...', 'info');
+                const startTime = performance.now();
+                
+                try {
+                    const safeData = await window.pocketParrotAPI.prepareSafeDataPoint(mockDataPoint);
+                    const prepTime = performance.now() - startTime;
+                    
+                    stats.prepareCount++;
+                    stats.prepareTimes.push(prepTime);
+                    updateStats();
+                    
+                    inspect('Prepared Safe Data Point', safeData);
+                    log(`✅ Data preparation completed in ${prepTime.toFixed(2)}ms`, 'success');
+                    
+                    // Validate data integrity
+                    if (safeData.gps && safeData.gps.latitude === mockDataPoint.gps.latitude) {
+                        log('✅ GPS latitude preserved: ' + safeData.gps.latitude, 'success');
+                    } else {
+                        log('❌ GPS latitude changed or missing!', 'error');
+                    }
+                    
+                    if (safeData.orientation && safeData.orientation.alpha === mockDataPoint.orientation.alpha) {
+                        log('✅ Orientation alpha preserved: ' + safeData.orientation.alpha, 'success');
+                    } else {
+                        log('❌ Orientation alpha changed or missing!', 'error');
+                    }
+                    
+                    if (safeData.weather && safeData.weather.temperature === mockDataPoint.weather.temperature) {
+                        log('✅ Weather temperature preserved: ' + safeData.weather.temperature, 'success');
+                    } else {
+                        log('❌ Weather temperature changed or missing!', 'error');
+                    }
+                    
+                } catch (error) {
+                    log('❌ Data preparation failed: ' + error.message, 'error');
+                    console.error(error);
+                }
+            } else {
+                log('❌ pocketParrotAPI not available', 'error');
+            }
+        }
+
+        async function testWebSocketSend() {
+            log('=== Testing WebSocket Send ===', 'info');
+            
+            if (!window.pocketParrotAPI) {
+                log('❌ pocketParrotAPI not available', 'error');
+                return;
+            }
+            
+            const status = window.pocketParrotAPI.getStatus();
+            log('WebSocket Status:', 'info');
+            log(`  Enabled: ${status.wsEnabled}`, 'info');
+            log(`  Endpoint: ${status.wsEndpoint || 'not configured'}`, 'info');
+            log(`  Connections: ${status.wsConnections}`, 'info');
+            
+            if (!status.wsEnabled) {
+                log('⚠️  WebSocket not enabled. Please configure and enable first.', 'warning');
+                return;
+            }
+            
+            if (status.wsConnections === 0) {
+                log('⚠️  No active WebSocket connections. Waiting for connection...', 'warning');
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                
+                const newStatus = window.pocketParrotAPI.getStatus();
+                if (newStatus.wsConnections === 0) {
+                    log('❌ Still no connections. Check endpoint and network.', 'error');
+                    return;
+                }
+            }
+            
+            // Create and send test data
+            const mockDataPoint = {
+                timestamp: new Date().toISOString(),
+                gps: {
+                    latitude: 47.6062,
+                    longitude: -122.3321,
+                    altitude: 100,
+                    accuracy: 10,
+                    speed: 5,
+                    heading: 90
+                },
+                orientation: {
+                    alpha: 45.5,
+                    beta: 30.2,
+                    gamma: 15.8
+                },
+                motion: {
+                    accelerationX: 0.5,
+                    accelerationY: 0.3,
+                    accelerationZ: 9.8
+                },
+                weather: {
+                    temperature: 15.5,
+                    humidity: 70,
+                    windSpeed: 10.2,
+                    windDirection: 180,
+                    precipitation: 0,
+                    cloudCover: 50
+                },
+                objectsDetected: [],
+                photoBlob: null,
+                audioBlob: null
+            };
+            
+            log('Sending test data through WebSocket...', 'info');
+            inspect('Data to Send', mockDataPoint);
+            
+            try {
+                await window.pocketParrotAPI.pushToWebSocket(mockDataPoint);
+                stats.wsSentCount++;
+                updateStats();
+                log('✅ Data sent to WebSocket', 'success');
+            } catch (error) {
+                log('❌ Failed to send data: ' + error.message, 'error');
+                console.error(error);
+            }
+        }
+
+        async function testFullFlow() {
+            log('=== Running Full Diagnostic Test ===', 'info');
+            document.getElementById('testBtn').disabled = true;
+            
+            try {
+                // Wait for app to initialize
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                if (!window.app || !window.pocketParrotAPI) {
+                    log('❌ App not initialized', 'error');
+                    return;
+                }
+                
+                log('✅ App initialized', 'success');
+                log('', 'info');
+                
+                // Test 1: Data Preparation
+                log('Test 1: Data Preparation', 'info');
+                await testDataPreparation();
+                log('', 'info');
+                
+                // Test 2: WebSocket Configuration
+                log('Test 2: WebSocket Status', 'info');
+                const status = window.pocketParrotAPI.getStatus();
+                log(`  Enabled: ${status.wsEnabled}`, status.wsEnabled ? 'success' : 'warning');
+                log(`  Endpoint: ${status.wsEndpoint || 'not configured'}`, status.wsEndpoint ? 'success' : 'warning');
+                log(`  Active Connections: ${status.wsConnections}`, 'info');
+                log('', 'info');
+                
+                // Test 3: Full capture and send (if WebSocket enabled)
+                if (status.wsEnabled && status.wsConnections > 0) {
+                    log('Test 3: Full Capture & Send', 'info');
+                    const mockDataPoint = {
+                        timestamp: new Date().toISOString(),
+                        gps: {
+                            latitude: 47.6062 + (Math.random() * 0.01 - 0.005),
+                            longitude: -122.3321 + (Math.random() * 0.01 - 0.005),
+                            altitude: 100,
+                            accuracy: 10,
+                            speed: 5,
+                            heading: 90
+                        },
+                        orientation: {
+                            alpha: 45 + Math.random() * 10,
+                            beta: 30 + Math.random() * 10,
+                            gamma: 15 + Math.random() * 10
+                        },
+                        motion: {
+                            accelerationX: 0.5 + Math.random() * 0.2,
+                            accelerationY: 0.3 + Math.random() * 0.2,
+                            accelerationZ: 9.8 + Math.random() * 0.2
+                        },
+                        weather: {
+                            temperature: 15.5,
+                            humidity: 70,
+                            windSpeed: 10.2
+                        },
+                        objectsDetected: [],
+                        photoBlob: null,
+                        audioBlob: null
+                    };
+                    
+                    stats.captureCount++;
+                    updateStats();
+                    
+                    log('Saving data point (will trigger WebSocket send)...', 'info');
+                    inspect('Data Before Save', mockDataPoint);
+                    
+                    await window.app.saveDataPoint(mockDataPoint);
+                    
+                    log('✅ Data point saved and transmitted', 'success');
+                } else {
+                    log('⚠️  Skipping Test 3: WebSocket not configured or connected', 'warning');
+                }
+                
+                log('', 'info');
+                log('=== Diagnostic Complete ===', 'success');
+                
+            } catch (error) {
+                log('❌ Test failed: ' + error.message, 'error');
+                console.error(error);
+            } finally {
+                document.getElementById('testBtn').disabled = false;
+            }
+        }
+
+        function configureWebSocket() {
+            const endpoint = document.getElementById('wsEndpoint').value.trim();
+            
+            if (!endpoint) {
+                log('❌ Please enter a WebSocket endpoint', 'error');
+                return;
+            }
+            
+            if (window.pocketParrotAPI) {
+                window.pocketParrotAPI.configureWebSocket(endpoint);
+                log('✅ WebSocket configured: ' + endpoint, 'success');
+            } else {
+                log('❌ pocketParrotAPI not available', 'error');
+            }
+        }
+
+        async function enableWebSocket() {
+            const endpoint = document.getElementById('wsEndpoint').value.trim();
+            
+            if (!endpoint) {
+                log('❌ Please configure WebSocket endpoint first', 'error');
+                return;
+            }
+            
+            if (window.pocketParrotAPI) {
+                try {
+                    configureWebSocket(); // Ensure it's configured
+                    await window.pocketParrotAPI.enableWebSocket();
+                    log('✅ WebSocket enabled', 'success');
+                    document.getElementById('enableWsBtn').disabled = true;
+                    document.getElementById('disableWsBtn').disabled = false;
+                    
+                    // Check connection after a delay
+                    setTimeout(() => {
+                        const status = window.pocketParrotAPI.getStatus();
+                        if (status.wsConnections > 0) {
+                            log(`✅ WebSocket connected (${status.wsConnections} connection(s))`, 'success');
+                        } else {
+                            log('⚠️  WebSocket enabled but not connected yet. Check endpoint.', 'warning');
+                        }
+                    }, 2000);
+                } catch (error) {
+                    log('❌ Failed to enable WebSocket: ' + error.message, 'error');
+                }
+            } else {
+                log('❌ pocketParrotAPI not available', 'error');
+            }
+        }
+
+        function disableWebSocket() {
+            if (window.pocketParrotAPI) {
+                window.pocketParrotAPI.disableWebSocket();
+                log('WebSocket disabled', 'info');
+                document.getElementById('enableWsBtn').disabled = false;
+                document.getElementById('disableWsBtn').disabled = true;
+            }
+        }
+
+        // Initialize when page loads
+        window.addEventListener('load', () => {
+            log('🔍 WebSocket Diagnostics Tool Initialized', 'success');
+            log('This tool helps diagnose data transmission issues', 'info');
+            log('', 'info');
+            
+            // Check if API is ready
+            setTimeout(() => {
+                if (window.pocketParrotAPI) {
+                    log('✅ Pocket Parrot API ready', 'success');
+                    const status = window.pocketParrotAPI.getStatus();
+                    if (status.wsEndpoint) {
+                        log(`Previous endpoint found: ${status.wsEndpoint}`, 'info');
+                        document.getElementById('wsEndpoint').value = status.wsEndpoint;
+                    }
+                } else {
+                    log('⚠️  Waiting for Pocket Parrot API...', 'warning');
+                }
+            }, 1500);
+        });
+    </script>
+</body>
+</html>

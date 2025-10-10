@@ -63,6 +63,14 @@ class PocketParrotDataAPI {
      * Notify all subscribers of new data
      */
     async notifySubscribers(dataPoint) {
+        console.log('🔍 [DEBUG] notifySubscribers called with:', {
+            timestamp: dataPoint.timestamp,
+            gps: dataPoint.gps,
+            orientation: dataPoint.orientation,
+            motion: dataPoint.motion,
+            weather: dataPoint.weather
+        });
+        
         // Create a safe copy without blob data for notifications
         const safeDataPoint = await this.prepareSafeDataPoint(dataPoint);
         
@@ -92,16 +100,37 @@ class PocketParrotDataAPI {
      * Prepare data point for transmission (convert blobs to base64)
      */
     async prepareSafeDataPoint(dataPoint) {
+        console.log('🔍 [DEBUG] prepareSafeDataPoint input:', {
+            timestamp: dataPoint.timestamp,
+            gps: dataPoint.gps,
+            orientation: dataPoint.orientation,
+            motion: dataPoint.motion,
+            weather: dataPoint.weather,
+            hasPhotoBlob: !!dataPoint.photoBlob,
+            hasAudioBlob: !!dataPoint.audioBlob
+        });
+        
         const safe = { ...dataPoint };
         
         if (dataPoint.photoBlob) {
+            console.log('🔍 [DEBUG] Converting photo blob to base64...');
             // Downsample photo before converting to base64
             safe.photoBase64 = await this.downsampleAndConvertPhoto(dataPoint.photoBlob);
             delete safe.photoBlob;
+            console.log('🔍 [DEBUG] Photo conversion complete, size:', safe.photoBase64 ? safe.photoBase64.length : 0);
         }
         
         // Remove audio from transmission - not needed for events
         delete safe.audioBlob;
+        
+        console.log('🔍 [DEBUG] prepareSafeDataPoint output:', {
+            timestamp: safe.timestamp,
+            gps: safe.gps,
+            orientation: safe.orientation,
+            motion: safe.motion,
+            weather: safe.weather,
+            hasPhotoBase64: !!safe.photoBase64
+        });
         
         return safe;
     }
@@ -331,8 +360,34 @@ class PocketParrotDataAPI {
         }
         
         try {
+            // Log original data point BEFORE preparation to debug empty values
+            console.log('🔍 [DEBUG] Original dataPoint before preparation:', {
+                timestamp: dataPoint.timestamp,
+                hasGPS: !!dataPoint.gps,
+                gpsRaw: dataPoint.gps,
+                hasOrientation: !!dataPoint.orientation,
+                orientationRaw: dataPoint.orientation,
+                hasMotion: !!dataPoint.motion,
+                motionRaw: dataPoint.motion,
+                hasWeather: !!dataPoint.weather,
+                weatherRaw: dataPoint.weather
+            });
+            
             // Prepare safe data point
             const safeDataPoint = await this.prepareSafeDataPoint(dataPoint);
+            
+            // Log prepared data to see if values changed during preparation
+            console.log('🔍 [DEBUG] After prepareSafeDataPoint:', {
+                timestamp: safeDataPoint.timestamp,
+                hasGPS: !!safeDataPoint.gps,
+                gpsAfterPrep: safeDataPoint.gps,
+                hasOrientation: !!safeDataPoint.orientation,
+                orientationAfterPrep: safeDataPoint.orientation,
+                hasMotion: !!safeDataPoint.motion,
+                motionAfterPrep: safeDataPoint.motion,
+                hasWeather: !!safeDataPoint.weather,
+                weatherAfterPrep: safeDataPoint.weather
+            });
             
             console.log('📤 Preparing to push data to WebSocket:', {
                 timestamp: safeDataPoint.timestamp,
@@ -364,7 +419,10 @@ class PocketParrotDataAPI {
                 data: safeDataPoint
             });
             
+            // Log a sample of the actual JSON being sent to help debug on receiving end
+            const messageSample = message.substring(0, 500);
             console.log('📤 Message size:', Math.round(message.length / 1024), 'KB');
+            console.log('🔍 [DEBUG] Message preview (first 500 chars):', messageSample + '...');
             
             // Send to all active connections
             this.wsConnections.forEach(ws => {
@@ -375,6 +433,7 @@ class PocketParrotDataAPI {
             });
         } catch (error) {
             console.error('❌ Failed to push data to WebSocket:', error);
+            console.error('❌ Error stack:', error.stack);
         }
     }
 
