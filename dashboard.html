@@ -107,7 +107,7 @@
             <div class="stat-card">
                 <div class="text-gray-400 text-sm mb-1">Active Users</div>
                 <div class="text-3xl font-bold text-green-400 pulse-animation" id="activeUsers">0</div>
-                <div class="text-xs text-gray-500 mt-1">Max: 25 | Listeners: <span id="passiveListeners">0</span></div>
+                <div class="text-xs text-gray-500 mt-1">Max: 25</div>
             </div>
 
             <!-- Total Data Points -->
@@ -129,6 +129,37 @@
                 <div class="text-gray-400 text-sm mb-1">Uptime</div>
                 <div class="text-3xl font-bold text-yellow-400" id="uptime">0:00</div>
                 <div class="text-xs text-gray-500 mt-1">hh:mm:ss</div>
+            </div>
+        </div>
+        
+        <!-- Listeners Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <!-- Passive Listeners -->
+            <div class="stat-card">
+                <div class="text-gray-400 text-sm mb-1">📻 Passive Listeners</div>
+                <div class="text-2xl font-bold text-cyan-400" id="passiveListeners">0</div>
+                <div class="text-xs text-gray-500 mt-1">All data</div>
+            </div>
+
+            <!-- Orientation Listeners -->
+            <div class="stat-card">
+                <div class="text-gray-400 text-sm mb-1">🧭 Orientation Listeners</div>
+                <div class="text-2xl font-bold text-orange-400" id="orientationListeners">0</div>
+                <div class="text-xs text-gray-500 mt-1">Low-latency</div>
+            </div>
+
+            <!-- Bulk Data Listeners -->
+            <div class="stat-card">
+                <div class="text-gray-400 text-sm mb-1">📦 Bulk Data Listeners</div>
+                <div class="text-2xl font-bold text-emerald-400" id="bulkDataListeners">0</div>
+                <div class="text-xs text-gray-500 mt-1">Batched</div>
+            </div>
+
+            <!-- Bulk Queue Size -->
+            <div class="stat-card">
+                <div class="text-gray-400 text-sm mb-1">📊 Bulk Queue</div>
+                <div class="text-2xl font-bold text-pink-400" id="bulkQueueSize">0</div>
+                <div class="text-xs text-gray-500 mt-1">Pending items</div>
             </div>
         </div>
 
@@ -324,6 +355,9 @@
             // Update counters
             document.getElementById('activeUsers').textContent = stats.activeUsers || 0;
             document.getElementById('passiveListeners').textContent = stats.passiveListeners || 0;
+            document.getElementById('orientationListeners').textContent = stats.orientationListeners || 0;
+            document.getElementById('bulkDataListeners').textContent = stats.bulkDataListeners || 0;
+            document.getElementById('bulkQueueSize').textContent = stats.bulkQueueSize || 0;
             document.getElementById('totalDataPoints').textContent = stats.totalDataPoints || 0;
             document.getElementById('dataRate').textContent = (stats.dataRate || 0).toFixed(1);
             document.getElementById('connectionCount').textContent = `${stats.activeUsers || 0}/25`;
