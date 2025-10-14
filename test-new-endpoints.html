@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test New Endpoints - Pocket Parrot</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .endpoint-section {
+            background: white;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 { color: #333; }
+        h2 { color: #4CAF50; border-bottom: 2px solid #4CAF50; padding-bottom: 10px; }
+        .status { 
+            padding: 10px; 
+            margin: 10px 0;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .status.connected { background: #c8e6c9; color: #2e7d32; }
+        .status.disconnected { background: #ffcdd2; color: #c62828; }
+        .status.connecting { background: #fff9c4; color: #f57f17; }
+        .log {
+            background: #f5f5f5;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .log-entry {
+            margin: 5px 0;
+            padding: 3px;
+        }
+        .log-entry.orientation { color: #1976d2; }
+        .log-entry.bulk { color: #388e3c; }
+        .log-entry.error { color: #d32f2f; font-weight: bold; }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button.connect { background: #4CAF50; color: white; }
+        button.disconnect { background: #f44336; color: white; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin: 10px 0;
+        }
+        .stat-card {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #1976d2;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🦜 Pocket Parrot - New Endpoints Test</h1>
+    
+    <div class="endpoint-section">
+        <h2>🧭 Orientation Endpoint (Low-Latency)</h2>
+        <div id="orientationStatus" class="status disconnected">Disconnected</div>
+        <button id="orientationConnect" class="connect">Connect</button>
+        <button id="orientationDisconnect" class="disconnect" disabled>Disconnect</button>
+        
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-value" id="orientationCount">0</div>
+                <div class="stat-label">Messages Received</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="orientationRate">0</div>
+                <div class="stat-label">Messages/sec</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="orientationLatest">—</div>
+                <div class="stat-label">Latest α (alpha)</div>
+            </div>
+        </div>
+        
+        <h3>Log:</h3>
+        <div id="orientationLog" class="log"></div>
+    </div>
+    
+    <div class="endpoint-section">
+        <h2>📦 Bulk Data Endpoint (Batched)</h2>
+        <div id="bulkStatus" class="status disconnected">Disconnected</div>
+        <button id="bulkConnect" class="connect">Connect</button>
+        <button id="bulkDisconnect" class="disconnect" disabled>Disconnect</button>
+        
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-value" id="bulkBatchCount">0</div>
+                <div class="stat-label">Batches Received</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="bulkItemCount">0</div>
+                <div class="stat-label">Total Items</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="bulkAvgBatchSize">0</div>
+                <div class="stat-label">Avg Batch Size</div>
+            </div>
+        </div>
+        
+        <h3>Log:</h3>
+        <div id="bulkLog" class="log"></div>
+    </div>
+
+    <script>
+        // Configuration
+        const SERVER_URL = 'ws://localhost:8080';
+        
+        // Orientation endpoint
+        let orientationWs = null;
+        let orientationCount = 0;
+        let orientationStartTime = null;
+        
+        // Bulk endpoint
+        let bulkWs = null;
+        let bulkBatchCount = 0;
+        let bulkItemCount = 0;
+        
+        // Helper functions
+        function log(elementId, message, className = '') {
+            const logDiv = document.getElementById(elementId);
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${className}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logDiv.insertBefore(entry, logDiv.firstChild);
+            
+            // Keep only last 50 entries
+            while (logDiv.children.length > 50) {
+                logDiv.removeChild(logDiv.lastChild);
+            }
+        }
+        
+        function updateStatus(elementId, text, connected) {
+            const statusDiv = document.getElementById(elementId);
+            statusDiv.textContent = text;
+            statusDiv.className = `status ${connected ? 'connected' : 'disconnected'}`;
+        }
+        
+        // Orientation endpoint handlers
+        document.getElementById('orientationConnect').onclick = () => {
+            orientationWs = new WebSocket(`${SERVER_URL}/orientation`);
+            orientationStartTime = Date.now();
+            orientationCount = 0;
+            
+            updateStatus('orientationStatus', 'Connecting...', false);
+            document.getElementById('orientationConnect').disabled = true;
+            
+            orientationWs.onopen = () => {
+                updateStatus('orientationStatus', 'Connected', true);
+                document.getElementById('orientationDisconnect').disabled = false;
+                log('orientationLog', '✅ Connected to orientation endpoint', 'orientation');
+            };
+            
+            orientationWs.onmessage = (event) => {
+                const message = JSON.parse(event.data);
+                
+                if (message.type === 'orientation_listener_connected') {
+                    log('orientationLog', `Welcome: ${message.message}`, 'orientation');
+                } else if (message.type === 'orientation_data') {
+                    orientationCount++;
+                    const { alpha, beta, gamma } = message.orientation;
+                    
+                    // Update stats
+                    document.getElementById('orientationCount').textContent = orientationCount;
+                    document.getElementById('orientationLatest').textContent = alpha.toFixed(1) + '°';
+                    
+                    // Calculate rate
+                    const elapsed = (Date.now() - orientationStartTime) / 1000;
+                    const rate = (orientationCount / elapsed).toFixed(1);
+                    document.getElementById('orientationRate').textContent = rate;
+                    
+                    // Log every 10th message to avoid spam
+                    if (orientationCount % 10 === 0) {
+                        log('orientationLog', 
+                            `Orientation #${orientationCount}: α=${alpha.toFixed(1)}° β=${beta.toFixed(1)}° γ=${gamma.toFixed(1)}°`, 
+                            'orientation');
+                    }
+                }
+            };
+            
+            orientationWs.onerror = (error) => {
+                log('orientationLog', `❌ Error: ${error.message}`, 'error');
+            };
+            
+            orientationWs.onclose = () => {
+                updateStatus('orientationStatus', 'Disconnected', false);
+                document.getElementById('orientationConnect').disabled = false;
+                document.getElementById('orientationDisconnect').disabled = true;
+                log('orientationLog', '🔌 Disconnected from orientation endpoint', 'orientation');
+            };
+        };
+        
+        document.getElementById('orientationDisconnect').onclick = () => {
+            if (orientationWs) {
+                orientationWs.close();
+            }
+        };
+        
+        // Bulk endpoint handlers
+        document.getElementById('bulkConnect').onclick = () => {
+            bulkWs = new WebSocket(`${SERVER_URL}/bulk`);
+            bulkBatchCount = 0;
+            bulkItemCount = 0;
+            
+            updateStatus('bulkStatus', 'Connecting...', false);
+            document.getElementById('bulkConnect').disabled = true;
+            
+            bulkWs.onopen = () => {
+                updateStatus('bulkStatus', 'Connected', true);
+                document.getElementById('bulkDisconnect').disabled = false;
+                log('bulkLog', '✅ Connected to bulk data endpoint', 'bulk');
+            };
+            
+            bulkWs.onmessage = (event) => {
+                const message = JSON.parse(event.data);
+                
+                if (message.type === 'bulk_listener_connected') {
+                    log('bulkLog', 
+                        `Welcome: Batch interval=${message.batchInterval}ms, max size=${message.maxBatchSize}`, 
+                        'bulk');
+                } else if (message.type === 'bulk_data_batch') {
+                    bulkBatchCount++;
+                    bulkItemCount += message.batchSize;
+                    
+                    // Update stats
+                    document.getElementById('bulkBatchCount').textContent = bulkBatchCount;
+                    document.getElementById('bulkItemCount').textContent = bulkItemCount;
+                    document.getElementById('bulkAvgBatchSize').textContent = 
+                        (bulkItemCount / bulkBatchCount).toFixed(1);
+                    
+                    // Log batch details
+                    log('bulkLog', 
+                        `📦 Batch #${bulkBatchCount}: ${message.batchSize} items`, 
+                        'bulk');
+                    
+                    // Log first item details
+                    if (message.data.length > 0) {
+                        const first = message.data[0];
+                        const details = [];
+                        if (first.gps) details.push('GPS');
+                        if (first.motion) details.push('Motion');
+                        if (first.weather) details.push('Weather');
+                        if (first.photoBase64) details.push('Photo');
+                        if (first.audioBase64) details.push('Audio');
+                        
+                        log('bulkLog', `   First item contains: ${details.join(', ')}`, 'bulk');
+                    }
+                }
+            };
+            
+            bulkWs.onerror = (error) => {
+                log('bulkLog', `❌ Error: ${error.message}`, 'error');
+            };
+            
+            bulkWs.onclose = () => {
+                updateStatus('bulkStatus', 'Disconnected', false);
+                document.getElementById('bulkConnect').disabled = false;
+                document.getElementById('bulkDisconnect').disabled = true;
+                log('bulkLog', '🔌 Disconnected from bulk data endpoint', 'bulk');
+            };
+        };
+        
+        document.getElementById('bulkDisconnect').onclick = () => {
+            if (bulkWs) {
+                bulkWs.close();
+            }
+        };
+    </script>
+</body>
+</html>
