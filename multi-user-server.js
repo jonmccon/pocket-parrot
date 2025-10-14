@@ -34,11 +34,21 @@ const port = process.env.PORT || process.argv[2] || 8080;
 const MAX_USERS = 25;
 const SENDER_TIMEOUT = 30000; // 30 seconds of no data = inactive
 
+// Batching configuration
+const BATCH_INTERVAL = 1000; // Send bulk data batch every 1 second
+const MAX_BATCH_SIZE = 10; // Maximum items per batch
+
 // Store connected clients with metadata
 const clients = new Map();
 const dashboardClients = new Set();
 const passiveListeners = new Set(); // Passive broadcast-only listeners
+const orientationListeners = new Set(); // Low-latency orientation data listeners
+const bulkDataListeners = new Set(); // Batched bulk data listeners
 const deviceSessions = new Map(); // Track devices to prevent reconnections
+
+// Bulk data batching queue
+const bulkDataQueue = [];
+let bulkDataBatchTimer = null;
 
 // Active sender management
 let activeDataSender = null;
@@ -65,8 +75,11 @@ console.log(`📡 Listening on port ${port}`);
 console.log(`🔗 Data endpoint: ws://YOUR_IP:${port}/pocket-parrot`);
 console.log(`📊 Dashboard endpoint: ws://YOUR_IP:${port}/dashboard`);
 console.log(`📻 Listener endpoint: ws://YOUR_IP:${port}/listener`);
+console.log(`🧭 Orientation endpoint: ws://YOUR_IP:${port}/orientation (low-latency)`);
+console.log(`📦 Bulk data endpoint: ws://YOUR_IP:${port}/bulk (batched)`);
 console.log(`👥 Max users: ${MAX_USERS} (single active sender)`);
 console.log(`⏱️  Sender timeout: ${SENDER_TIMEOUT/1000}s`);
+console.log(`📊 Batch interval: ${BATCH_INTERVAL}ms, max size: ${MAX_BATCH_SIZE}`);
 console.log('');
 console.log('Waiting for connections...');
 console.log('');
@@ -133,6 +146,79 @@ wss.on('connection', (ws, req) => {
     
     ws.on('error', (error) => {
       console.error('❌ Passive listener error:', error.message);
+    });
+    
+    return;
+  }
+  
+  // Orientation listener connection - low-latency orientation data only
+  if (pathname === '/orientation') {
+    console.log('🧭 Orientation listener connected');
+    console.log(`   IP Address: ${req.socket.remoteAddress}`);
+    console.log(`   Total orientation listeners: ${orientationListeners.size + 1}`);
+    console.log('');
+    
+    orientationListeners.add(ws);
+    
+    // Send welcome message
+    ws.send(JSON.stringify({
+      type: 'orientation_listener_connected',
+      message: 'Connected to low-latency orientation data stream',
+      timestamp: new Date().toISOString()
+    }));
+    
+    ws.on('close', () => {
+      console.log('🧭 Orientation listener disconnected');
+      console.log(`   Total orientation listeners: ${orientationListeners.size - 1}`);
+      console.log('');
+      orientationListeners.delete(ws);
+    });
+    
+    ws.on('error', (error) => {
+      console.error('❌ Orientation listener error:', error.message);
+    });
+    
+    return;
+  }
+  
+  // Bulk data listener connection - batched data (GPS, weather, photos, etc.)
+  if (pathname === '/bulk') {
+    console.log('📦 Bulk data listener connected');
+    console.log(`   IP Address: ${req.socket.remoteAddress}`);
+    console.log(`   Total bulk data listeners: ${bulkDataListeners.size + 1}`);
+    console.log('');
+    
+    bulkDataListeners.add(ws);
+    
+    // Send welcome message
+    ws.send(JSON.stringify({
+      type: 'bulk_listener_connected',
+      message: 'Connected to batched bulk data stream',
+      batchInterval: BATCH_INTERVAL,
+      maxBatchSize: MAX_BATCH_SIZE,
+      timestamp: new Date().toISOString()
+    }));
+    
+    // Start batch timer if not already running
+    if (!bulkDataBatchTimer && bulkDataListeners.size > 0) {
+      startBulkDataBatchTimer();
+    }
+    
+    ws.on('close', () => {
+      console.log('📦 Bulk data listener disconnected');
+      console.log(`   Total bulk data listeners: ${bulkDataListeners.size - 1}`);
+      console.log('');
+      bulkDataListeners.delete(ws);
+      
+      // Stop batch timer if no more listeners
+      if (bulkDataListeners.size === 0 && bulkDataBatchTimer) {
+        clearInterval(bulkDataBatchTimer);
+        bulkDataBatchTimer = null;
+      }
+    });
+    
+    ws.on('error', (error) => {
+      console.error('❌ Bulk data listener error:', error.message);
     });
     
     return;
@@ -321,7 +407,16 @@ wss.on('connection', (ws, req) => {
         // Ingest the data
         ingestData(clientId, data.data, client);
         
-        // Broadcast sensor data to passive listeners
+        // Broadcast to specialized endpoints
+        // 1. Send orientation data immediately (low-latency)
+        if (data.data.orientation) {
+          broadcastOrientationData(clientId, client.username, data.data.orientation);
+        }
+        
+        // 2. Queue bulk data for batched delivery
+        queueBulkData(clientId, client.username, data.data);
+        
+        // 3. Broadcast full sensor data to passive listeners (legacy behavior)
         broadcastToListeners({
           type: 'sensor_data',
           timestamp: new Date().toISOString(),
@@ -636,6 +731,96 @@ function broadcastToListeners(message) {
 }
 
 /**
+ * Broadcast orientation data to orientation listeners (immediate, low-latency)
+ */
+function broadcastOrientationData(userId, username, orientationData) {
+  if (orientationListeners.size === 0) return;
+  
+  const message = JSON.stringify({
+    type: 'orientation_data',
+    timestamp: new Date().toISOString(),
+    userId: userId,
+    username: username,
+    orientation: orientationData
+  });
+  
+  orientationListeners.forEach(ws => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(message);
+    }
+  });
+}
+
+/**
+ * Queue bulk data for batched delivery
+ */
+function queueBulkData(userId, username, sensorData) {
+  // Extract bulk data (everything except orientation)
+  const bulkData = {
+    timestamp: new Date().toISOString(),
+    userId: userId,
+    username: username,
+    gps: sensorData.gps || null,
+    motion: sensorData.motion || null,
+    weather: sensorData.weather || null,
+    objectsDetected: sensorData.objectsDetected || [],
+    photoBase64: sensorData.photoBase64 || null,
+    audioBase64: sensorData.audioBase64 || null,
+    colorPalette: sensorData.colorPalette || null
+  };
+  
+  bulkDataQueue.push(bulkData);
+  
+  // If queue reaches max size, send immediately
+  if (bulkDataQueue.length >= MAX_BATCH_SIZE) {
+    sendBulkDataBatch();
+  }
+}
+
+/**
+ * Send batched bulk data to bulk listeners
+ */
+function sendBulkDataBatch() {
+  if (bulkDataQueue.length === 0 || bulkDataListeners.size === 0) {
+    return;
+  }
+  
+  // Create batch message
+  const batch = bulkDataQueue.splice(0, MAX_BATCH_SIZE);
+  const message = JSON.stringify({
+    type: 'bulk_data_batch',
+    timestamp: new Date().toISOString(),
+    batchSize: batch.length,
+    data: batch
+  });
+  
+  // Send to all bulk data listeners
+  bulkDataListeners.forEach(ws => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(message);
+    }
+  });
+  
+  console.log(`📦 Sent bulk data batch: ${batch.length} items to ${bulkDataListeners.size} listeners`);
+}
+
+/**
+ * Start bulk data batch timer
+ */
+function startBulkDataBatchTimer() {
+  if (bulkDataBatchTimer) return;
+  
+  bulkDataBatchTimer = setInterval(() => {
+    if (bulkDataQueue.length > 0) {
+      sendBulkDataBatch();
+    }
+  }, BATCH_INTERVAL);
+  
+  console.log(`⏰ Started bulk data batch timer (${BATCH_INTERVAL}ms interval)`);
+}
+
+
+/**
  * Send stats to a specific client
  */
 function sendStatsToClient(ws) {
@@ -690,9 +875,12 @@ function getStats() {
   return {
     activeUsers: clients.size,
     passiveListeners: passiveListeners.size,
+    orientationListeners: orientationListeners.size,
+    bulkDataListeners: bulkDataListeners.size,
     activeSender: activeDataSender,
     totalDataPoints: totalDataPoints,
     dataRate: dataPointsLastMinute,
+    bulkQueueSize: bulkDataQueue.length,
     uptime: Math.floor((Date.now() - serverStartTime) / 1000),
     users: users
   };
@@ -700,10 +888,13 @@ function getStats() {
 
 // Status reporting - prints server statistics every minute
 setInterval(() => {
-  if (clients.size > 0 || passiveListeners.size > 0) {
+  if (clients.size > 0 || passiveListeners.size > 0 || orientationListeners.size > 0 || bulkDataListeners.size > 0) {
     console.log('📊 Server Status Report:');
     console.log(`   Connected users: ${clients.size}/${MAX_USERS}`);
     console.log(`   Passive listeners: ${passiveListeners.size}`);
+    console.log(`   Orientation listeners: ${orientationListeners.size}`);
+    console.log(`   Bulk data listeners: ${bulkDataListeners.size}`);
+    console.log(`   Bulk queue size: ${bulkDataQueue.length}`);
     console.log(`   Active sender: ${activeDataSender || 'none'}`);
     
     let totalData = 0;
@@ -735,9 +926,20 @@ wss.on('error', (error) => {
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\n🛑 Shutting down server...');
-  console.log(`   Disconnecting ${clients.size} users, ${dashboardClients.size} dashboards, and ${passiveListeners.size} listeners...`);
+  console.log(`   Disconnecting ${clients.size} users, ${dashboardClients.size} dashboards, ${passiveListeners.size} listeners, ${orientationListeners.size} orientation listeners, and ${bulkDataListeners.size} bulk listeners...`);
   
   clearSenderTimeout();
+  
+  // Clear bulk data batch timer
+  if (bulkDataBatchTimer) {
+    clearInterval(bulkDataBatchTimer);
+    bulkDataBatchTimer = null;
+  }
+  
+  // Send any remaining bulk data
+  if (bulkDataQueue.length > 0) {
+    sendBulkDataBatch();
+  }
   
   clients.forEach((client, id) => {
     client.ws.send(JSON.stringify({
@@ -752,6 +954,22 @@ process.on('SIGINT', () => {
   });
   
   passiveListeners.forEach(ws => {
+    ws.send(JSON.stringify({
+      type: 'server_shutdown',
+      message: 'Server is shutting down'
+    }));
+    ws.close();
+  });
+  
+  orientationListeners.forEach(ws => {
+    ws.send(JSON.stringify({
+      type: 'server_shutdown',
+      message: 'Server is shutting down'
+    }));
+    ws.close();
+  });
+  
+  bulkDataListeners.forEach(ws => {
     ws.send(JSON.stringify({
       type: 'server_shutdown',
       message: 'Server is shutting down'
