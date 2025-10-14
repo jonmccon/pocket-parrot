@@ -15,6 +15,9 @@
  * - Users just open the URL and click "Start"
  */
 
+// # Dashboard on domain
+// https://live.theplotquickens.today/dashboard.html?server=wss://data.theplotquickens.today/dashboard
+
 const PocketParrotConfig = {
     /**
      * Pre-configured WebSocket endpoint
@@ -25,14 +28,14 @@ const PocketParrotConfig = {
      *   'wss://your-server.com/pocket-parrot'
      *   'ws://192.168.1.100:8080/pocket-parrot'
      */
-    WEBSOCKET_ENDPOINT: null,
+    WEBSOCKET_ENDPOINT: 'wss://data.theplotquickens.today/',
     
     /**
      * Automatically enable WebSocket on app load
      * When true, WebSocket connection starts automatically if endpoint is configured
      * Best for event-based experiences where all users should stream immediately
      */
-    AUTO_ENABLE_WEBSOCKET: false,
+    AUTO_ENABLE_WEBSOCKET: true,
     
     /**
      * Hide Settings button and WebSocket configuration UI
@@ -46,20 +49,20 @@ const PocketParrotConfig = {
      * When true, begins capturing sensor data immediately after user grants permissions
      * Useful for streamlined event experiences
      */
-    AUTO_START_CAPTURE: false,
+    AUTO_START_CAPTURE: true,
     
     /**
      * Default capture interval in milliseconds
      * How often to automatically capture sensor data
      * Set to 0 to disable continuous capture
      */
-    CAPTURE_INTERVAL: 5000, // 5 seconds
+    CAPTURE_INTERVAL: 100, // 5 seconds
     
     /**
      * Show welcome/instruction message on first load
      * Helpful for guiding event participants
      */
-    SHOW_WELCOME_MESSAGE: true,
+    SHOW_WELCOME_MESSAGE: false,
     
     /**
      * Custom welcome message for event participants
