@@ -2364,6 +2364,11 @@ class PocketParrot {
      */
     loadStreamingConfig() {
         try {
+            // Check if URL parameters were used (they take precedence)
+            const urlParams = new URLSearchParams(window.location.search);
+            const hasUrlConfig = urlParams.has('interval') || urlParams.has('captureInterval') || 
+                                urlParams.has('dataMode') || urlParams.has('mode');
+            
             const saved = localStorage.getItem('pocketParrot_streamingConfig');
             if (saved) {
                 const config = JSON.parse(saved);
@@ -2375,10 +2380,13 @@ class PocketParrot {
                 document.getElementById('includeMedia').checked = config.includeMedia || false;
                 document.getElementById('highAccuracyGPS').checked = config.highAccuracyGPS !== false;
                 
-                // Apply to app
-                this.captureIntervalMs = config.captureInterval || 5000;
+                // Only apply to app if no URL config was used
+                if (!hasUrlConfig) {
+                    this.captureIntervalMs = config.captureInterval || 5000;
+                }
                 
                 console.log('📊 Streaming configuration loaded:', config);
+                console.log(`📊 Current capture interval: ${this.captureIntervalMs}ms`);
             }
         } catch (error) {
             console.error('Error loading streaming config:', error);
@@ -2521,8 +2529,12 @@ async function applyConfiguration() {
         eventName
     });
     
-    // Apply streaming configuration if URL parameters are provided
-    if (urlParams.has('interval') || urlParams.has('dataMode') || urlParams.has('mode')) {
+    // ALWAYS apply streaming configuration if ANY parameters are provided (URL or config file)
+    const hasStreamingConfig = urlParams.has('interval') || urlParams.has('captureInterval') || 
+                              urlParams.has('dataMode') || urlParams.has('mode') || 
+                              config.CAPTURE_INTERVAL || config.EVENT_MODE;
+    
+    if (hasStreamingConfig) {
         const streamingConfig = {
             captureInterval: parseInt(captureInterval),
             dataMode,
@@ -2534,10 +2546,17 @@ async function applyConfiguration() {
         // Save to localStorage to persist the configuration
         localStorage.setItem('pocketParrot_streamingConfig', JSON.stringify(streamingConfig));
         
-        // Apply to app instance
+        // Apply to app instance IMMEDIATELY
         if (app) {
             app.captureIntervalMs = parseInt(captureInterval);
-            console.log('📊 Streaming configuration applied from URL');
+            console.log(`📊 Capture interval set to: ${app.captureIntervalMs}ms`);
+        }
+        
+        // Also update UI if settings page is loaded
+        const intervalInput = document.getElementById('captureInterval');
+        if (intervalInput) {
+            intervalInput.value = captureInterval;
+            app.updateDataUsageEstimate();
         }
     }
     
@@ -2652,3 +2671,13 @@ function showWelcomeMessage(message, eventName) {
     `;
     document.body.appendChild(welcomeDiv);
 }
+
+// Add this to test configuration loading
+window.debugConfig = function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    console.log('🔍 Debug Configuration:');
+    console.log('URL interval param:', urlParams.get('interval') || urlParams.get('captureInterval'));
+    console.log('App captureIntervalMs:', app.captureIntervalMs);
+    console.log('localStorage config:', localStorage.getItem('pocketParrot_streamingConfig'));
+    console.log('Settings UI value:', document.getElementById('captureInterval')?.value);
+};
