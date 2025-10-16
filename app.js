@@ -291,7 +291,7 @@ class PocketParrot {
     }
 
     /**
-     * Update orientation data display
+     * Update orientation data display and broadcast to WebSocket if enabled
      */
     updateOrientationData(event) {
         document.getElementById('alpha').textContent = event.alpha ? event.alpha.toFixed(1) : '--';
@@ -305,6 +305,41 @@ class PocketParrot {
             
             // Update visual orientation indicator
             this.updateOrientationVisual(event.alpha, event.beta, event.gamma);
+            
+            // Broadcast orientation data immediately to WebSocket if enabled
+            if (window.pocketParrotAPI && window.pocketParrotAPI.getStatus().wsEnabled) {
+                this.broadcastOrientationToWebSocket({
+                    alpha: event.alpha,
+                    beta: event.beta,
+                    gamma: event.gamma
+                });
+            }
+        }
+    }
+
+    // Broadcast orientation data to WebSocket immediately
+    broadcastOrientationToWebSocket(orientationData) {
+        // Only broadcast if we have valid data
+        if (orientationData.alpha === null || orientationData.beta === null || orientationData.gamma === null) {
+            return;
+        }
+        
+        const message = {
+            type: 'data',
+            timestamp: new Date().toISOString(),
+            data: {
+                timestamp: new Date().toISOString(),
+                orientation: orientationData
+            }
+        };
+        
+        // Send via Data API WebSocket (to main /pocket-parrot endpoint)
+        if (window.pocketParrotAPI && window.pocketParrotAPI.wsConnections) {
+            window.pocketParrotAPI.wsConnections.forEach(ws => {
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify(message));
+                }
+            });
         }
     }
 
