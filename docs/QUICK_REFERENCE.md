@@ -111,7 +111,21 @@ Data automatically streams to your server. No configuration needed!
 
 ## Server-Side Data Processing
 
-**Basic Example:**
+### Choosing the Right Endpoint
+
+Your WebSocket server can listen on different endpoints for different purposes:
+
+| Endpoint | Purpose | Use When |
+|----------|---------|----------|
+| `/listener` | General passive listening | You want all data, simple integration |
+| `/orientation` | Low-latency orientation only | Building 3D visualizations, AR/VR |
+| `/bulk` | Batched data (GPS, weather, media) | Analytics, logging, archival |
+| `/pocket-parrot` | Primary client endpoint | Building Pocket Parrot client (not typical) |
+
+**Recommendation for Events:** Use `/listener` for simplicity or `/bulk` for efficient data processing.
+
+### Basic Example - General Listener
+
 ```javascript
 function ingestData(userId, sensorData) {
   // Store in database
@@ -119,6 +133,7 @@ function ingestData(userId, sensorData) {
     userId: userId,
     timestamp: sensorData.timestamp,
     gps: sensorData.gps,
+    orientation: sensorData.orientation,
     // ... other fields
   });
   
@@ -128,6 +143,30 @@ function ingestData(userId, sensorData) {
     data: sensorData
   });
 }
+```
+
+### Advanced Example - Dual Endpoints
+
+```javascript
+// For real-time visualization: orientation endpoint
+const orientWs = new WebSocket('ws://server:8080/orientation');
+orientWs.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  if (msg.type === 'orientation_data') {
+    updateLiveVisualization(msg.orientation);
+  }
+};
+
+// For data logging: bulk endpoint
+const bulkWs = new WebSocket('ws://server:8080/bulk');
+bulkWs.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  if (msg.type === 'bulk_data_batch') {
+    msg.data.forEach(dataPoint => {
+      saveToDB(dataPoint); // Efficient batch processing
+    });
+  }
+};
 ```
 
 ---
