@@ -131,8 +131,11 @@ class PocketParrot {
             window.addEventListener('devicemotion', (event) => this.updateMotionData(event));
         }
         
-        // Permission request button
-        document.getElementById('requestPermissionsBtn').addEventListener('click', () => this.requestPermissions());
+        // Permission request button (if it exists)
+        const permissionsBtn = document.getElementById('requestPermissionsBtn');
+        if (permissionsBtn) {
+            permissionsBtn.addEventListener('click', () => this.requestPermissions());
+        }
     }
 
     /**
