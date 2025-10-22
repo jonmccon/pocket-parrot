@@ -94,7 +94,7 @@ class PocketParrot {
         // Camera controls
         document.getElementById('startCameraBtn').addEventListener('click', () => this.startCamera());
         document.getElementById('takePhotoBtn').addEventListener('click', () => this.takePhoto());
-        document.getElementById('cancelCameraBtn').addEventListener('click', () => this.stopCamera());
+        document.getElementById('stopCameraBtn').addEventListener('click', () => this.stopCamera());
         
         // Audio controls
         document.getElementById('startRecordingBtn').addEventListener('click', () => this.startRecording());
@@ -347,49 +347,27 @@ class PocketParrot {
      * Update visual orientation indicator
      */
     updateOrientationVisual(alpha, beta, gamma) {
-        // Update desktop version
         const deviceRect = document.getElementById('deviceRect');
         const compassNeedle = document.getElementById('compassNeedle');
         
-        if (deviceRect && compassNeedle) {
-            // Rotate device rectangle based on gamma (device roll)
-            const deviceRotation = gamma || 0;
-            deviceRect.setAttribute('transform', `rotate(${deviceRotation} 40 40)`);
-            
-            // Rotate compass needle based on alpha (device heading)
-            const compassRotation = alpha ? (360 - alpha) % 360 : 0;
-            compassNeedle.setAttribute('transform', `rotate(${compassRotation} 40 40)`);
-            
-            // Update device rect color based on tilt (beta)
-            const tilt = Math.abs(beta || 0);
-            if (tilt > 45) {
-                deviceRect.setAttribute('fill', '#dc2626'); // red for extreme tilt
-            } else if (tilt > 15) {
-                deviceRect.setAttribute('fill', '#f59e0b'); // yellow for moderate tilt
-            } else {
-                deviceRect.setAttribute('fill', '#4b5563'); // gray for level
-            }
-        }
+        if (!deviceRect || !compassNeedle) return;
         
-        // Update mobile version
-        const deviceRectMobile = document.getElementById('deviceRectMobile');
-        const compassNeedleMobile = document.getElementById('compassNeedleMobile');
+        // Rotate device rectangle based on gamma (device roll)
+        const deviceRotation = gamma || 0;
+        deviceRect.setAttribute('transform', `rotate(${deviceRotation} 40 40)`);
         
-        if (deviceRectMobile && compassNeedleMobile) {
-            const deviceRotation = gamma || 0;
-            deviceRectMobile.setAttribute('transform', `rotate(${deviceRotation} 60 60)`);
-            
-            const compassRotation = alpha ? (360 - alpha) % 360 : 0;
-            compassNeedleMobile.setAttribute('transform', `rotate(${compassRotation} 60 60)`);
-            
-            const tilt = Math.abs(beta || 0);
-            if (tilt > 45) {
-                deviceRectMobile.setAttribute('fill', '#dc2626');
-            } else if (tilt > 15) {
-                deviceRectMobile.setAttribute('fill', '#f59e0b');
-            } else {
-                deviceRectMobile.setAttribute('fill', '#4b5563');
-            }
+        // Rotate compass needle based on alpha (device heading)
+        const compassRotation = alpha ? (360 - alpha) % 360 : 0;
+        compassNeedle.setAttribute('transform', `rotate(${compassRotation} 40 40)`);
+        
+        // Update device rect color based on tilt (beta)
+        const tilt = Math.abs(beta || 0);
+        if (tilt > 45) {
+            deviceRect.setAttribute('fill', '#dc2626'); // red for extreme tilt
+        } else if (tilt > 15) {
+            deviceRect.setAttribute('fill', '#f59e0b'); // yellow for moderate tilt
+        } else {
+            deviceRect.setAttribute('fill', '#4b5563'); // gray for level
         }
     }
 
@@ -650,7 +628,7 @@ class PocketParrot {
             video.classList.remove('hidden');
             document.getElementById('startCameraBtn').classList.add('hidden');
             document.getElementById('takePhotoBtn').classList.remove('hidden');
-            document.getElementById('cancelCameraBtn').classList.remove('hidden');
+            document.getElementById('stopCameraBtn').classList.remove('hidden');
             
             // Load object detection model if not already loaded
             if (!this.objectDetectionModel) {
@@ -680,7 +658,7 @@ class PocketParrot {
         video.classList.add('hidden');
         document.getElementById('startCameraBtn').classList.remove('hidden');
         document.getElementById('takePhotoBtn').classList.add('hidden');
-        document.getElementById('cancelCameraBtn').classList.add('hidden');
+        document.getElementById('stopCameraBtn').classList.add('hidden');
         
         // Clear detection results
         document.getElementById('detectionResults').classList.add('hidden');
