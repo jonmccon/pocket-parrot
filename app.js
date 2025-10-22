@@ -711,13 +711,93 @@ class PocketParrot {
             }
         }
         
-        // Convert canvas to blob
+        // Convert canvas to blob and save photo as a data point
         return new Promise(resolve => {
-            canvas.toBlob(blob => {
+            canvas.toBlob(async blob => {
+                // Save photo to database with all current sensor data
+                await this.savePhotoDataPoint(blob, detectedObjects, colorPalette);
+                
+                // Also return the photo data for backward compatibility
                 resolve({ blob, detectedObjects, colorPalette });
             }, 'image/jpeg', 0.8);
         });
     }
+
+    /**
+     * Save a photo as a complete data point with current sensor readings
+     */
+    async savePhotoDataPoint(photoBlob, detectedObjects, colorPalette) {
+        try {
+            const timestamp = new Date().toISOString();
+            const dataPoint = {
+                timestamp,
+                captureMethod: 'user_photo_capture', // Indicates this was a user-initiated photo
+                gps: null,
+                orientation: null,
+                motion: null,
+                weather: null,
+                objectsDetected: detectedObjects || [],
+                colorPalette: colorPalette || [],
+                photoBlob: photoBlob,
+                audioBlob: null
+            };
+            
+            // Include current GPS location if available
+            if (this.currentPosition) {
+                const coords = this.currentPosition.coords;
+                dataPoint.gps = {
+                    latitude: coords.latitude,
+                    longitude: coords.longitude,
+                    altitude: coords.altitude,
+                    accuracy: coords.accuracy,
+                    speed: coords.speed,
+                    heading: coords.heading
+                };
+            }
+            
+            // Include current orientation data if available
+            if (window.DeviceOrientationEvent) {
+                const alphaEl = document.getElementById('alpha');
+                const betaEl = document.getElementById('beta');
+                const gammaEl = document.getElementById('gamma');
+                
+                if (alphaEl && alphaEl.textContent !== '--') {
+                    dataPoint.orientation = {
+                        alpha: parseFloat(alphaEl.textContent),
+                        beta: parseFloat(betaEl.textContent),
+                        gamma: parseFloat(gammaEl.textContent)
+                    };
+                }
+            }
+            
+            // Include current motion data if available
+            if (window.DeviceMotionEvent) {
+                const accelXEl = document.getElementById('accelX');
+                const accelYEl = document.getElementById('accelY');
+                const accelZEl = document.getElementById('accelZ');
+                
+                if (accelXEl && accelXEl.textContent !== '--') {
+                    dataPoint.motion = {
+                        accelerationX: parseFloat(accelXEl.textContent),
+                        accelerationY: parseFloat(accelYEl.textContent),
+                        accelerationZ: parseFloat(accelZEl.textContent)
+                    };
+                }
+            }
+            
+            // Save to IndexedDB
+            await this.saveDataPoint(dataPoint);
+            await this.updateRecordCount();
+            
+            this.updateStatus('Photo captured and saved');
+            console.log('📸 Photo captured by user and saved to database');
+            
+        } catch (error) {
+            console.error('Error saving photo data point:', error);
+            this.updateStatus('Failed to save photo');
+        }
+    }
+
 
     /**
      * Extract dominant colors from canvas image
@@ -1001,14 +1081,8 @@ class PocketParrot {
                 }
             }
             
-            // Get photo and object detection if camera is active
-            const video = document.getElementById('cameraPreview');
-            if (!video.classList.contains('hidden') && video.srcObject) {
-                const photoData = await this.takePhoto();
-                dataPoint.photoBlob = photoData.blob;
-                dataPoint.objectsDetected = photoData.detectedObjects;
-                dataPoint.colorPalette = photoData.colorPalette;
-            }
+            // Note: Photos are now only captured when user explicitly presses "Take Photo" button
+            // Removed automatic photo capture to prevent unintended photo streaming
             
             // Get audio if recording
             if (this.audioChunks.length > 0) {
@@ -1188,22 +1262,14 @@ class PocketParrot {
                 dataPoint.weather = weatherResult;
             }
             
-            // Get media data if configured
-            if (config.includeMedia) {
-                // Get photo if camera is active
-                const video = document.getElementById('cameraPreview');
-                if (!video.classList.contains('hidden') && video.srcObject) {
-                    const photoData = await this.takePhoto();
-                    dataPoint.photoBlob = photoData.blob;
-                    dataPoint.objectsDetected = photoData.detectedObjects;
-                    dataPoint.colorPalette = photoData.colorPalette;
-                }
-                
-                // Get audio if recording
-                if (this.audioChunks.length > 0) {
-                    dataPoint.audioBlob = new Blob(this.audioChunks, { type: 'audio/wav' });
-                    this.audioChunks = []; // Clear for next recording
-                }
+            // Note: Photos are now only captured when user explicitly presses "Take Photo" button
+            // The includeMedia setting no longer automatically captures photos during streaming
+            // This prevents creating a near-live video stream and respects user intent
+            
+            // Get audio if recording (audio can still be included in streaming)
+            if (config.includeMedia && this.audioChunks.length > 0) {
+                dataPoint.audioBlob = new Blob(this.audioChunks, { type: 'audio/wav' });
+                this.audioChunks = []; // Clear for next recording
             }
             
             // Save to IndexedDB
@@ -1381,14 +1447,8 @@ class PocketParrot {
                 }
             }
             
-            // Get photo and object detection if camera is active
-            const video = document.getElementById('cameraPreview');
-            if (!video.classList.contains('hidden') && video.srcObject) {
-                const photoData = await this.takePhoto();
-                dataPoint.photoBlob = photoData.blob;
-                dataPoint.objectsDetected = photoData.detectedObjects;
-                dataPoint.colorPalette = photoData.colorPalette;
-            }
+            // Note: Photos are now only captured when user explicitly presses "Take Photo" button
+            // Removed automatic photo capture to prevent unintended photo streaming
             
             // Get audio if recording
             if (this.audioChunks.length > 0) {
