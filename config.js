@@ -56,7 +56,14 @@ const PocketParrotConfig = {
      * How often to automatically capture sensor data
      * Set to 0 to disable continuous capture
      */
-    CAPTURE_INTERVAL: 100, // 5 seconds
+    CAPTURE_INTERVAL: 100, // .1 seconds
+    
+    /**
+     * Include media (photos/audio) in data transmission by default
+     * When true, user-captured photos will be included in WebSocket streams
+     * When false, only sensor data is transmitted (photos still saved locally)
+     */
+    INCLUDE_MEDIA: true,
     
     /**
      * Show welcome/instruction message on first load

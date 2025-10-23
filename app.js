@@ -2475,7 +2475,7 @@ class PocketParrot {
                 document.getElementById('captureInterval').value = config.captureInterval || 5000;
                 document.getElementById('dataMode').value = config.dataMode || 'gps';
                 document.getElementById('includeWeather').checked = config.includeWeather !== false;
-                document.getElementById('includeMedia').checked = config.includeMedia || false;
+                document.getElementById('includeMedia').checked = config.includeMedia !== undefined ? config.includeMedia : (typeof PocketParrotConfig !== 'undefined' && PocketParrotConfig.INCLUDE_MEDIA !== undefined ? PocketParrotConfig.INCLUDE_MEDIA : false);
                 document.getElementById('highAccuracyGPS').checked = config.highAccuracyGPS !== false;
                 
                 // Only apply to app if no URL config was used
@@ -2606,7 +2606,7 @@ async function applyConfiguration() {
     const captureInterval = urlParams.get('interval') || urlParams.get('captureInterval') || config.CAPTURE_INTERVAL || 5000;
     const dataMode = urlParams.get('dataMode') || urlParams.get('mode') || 'gps';
     const includeWeather = urlParams.has('weather') ? urlParams.get('weather') !== 'false' : true;
-    const includeMedia = urlParams.has('media') ? urlParams.get('media') === 'true' : false;
+    const includeMedia = urlParams.has('media') ? urlParams.get('media') === 'true' : (config.INCLUDE_MEDIA !== undefined ? config.INCLUDE_MEDIA : false);
     const highAccuracyGPS = urlParams.has('highGPS') ? urlParams.get('highGPS') !== 'false' : true;
     
     // Get event name

@@ -102,6 +102,7 @@ class PocketParrotDataAPI {
     async prepareSafeDataPoint(dataPoint) {
         console.log('🔍 [DEBUG] prepareSafeDataPoint input:', {
             timestamp: dataPoint.timestamp,
+            captureMethod: dataPoint.captureMethod,
             gps: dataPoint.gps,
             orientation: dataPoint.orientation,
             motion: dataPoint.motion,
@@ -112,8 +113,13 @@ class PocketParrotDataAPI {
         
         const safe = { ...dataPoint };
         
-        if (dataPoint.photoBlob) {
-            console.log('🔍 [DEBUG] Converting photo blob to base64...');
+        // Always include photos from user-initiated captures, regardless of includeMedia setting
+        // Only respect includeMedia setting for automatic streaming captures
+        const isUserPhotoCapture = dataPoint.captureMethod === 'user_photo_capture';
+        const shouldIncludePhoto = isUserPhotoCapture || dataPoint.photoBlob;
+        
+        if (dataPoint.photoBlob && shouldIncludePhoto) {
+            console.log('🔍 [DEBUG] Converting photo blob to base64... (captureMethod:', dataPoint.captureMethod, ')');
             // Downsample photo before converting to base64
             safe.photoBase64 = await this.downsampleAndConvertPhoto(dataPoint.photoBlob);
             delete safe.photoBlob;
