@@ -55,7 +55,7 @@ The multi-user server (`multi-user-server.js`) supports five types of connection
   - **No session messages**: Does not receive user-specific messages like promotion, observer_mode, etc.
   - **Ideal for**: Data visualization clients (e.g., p5.js sketches), analytics dashboards, logging systems
 
-### 4. Low-Latency Orientation Stream (`/orientation`) ⚡ NEW
+### 4. Low-Latency Orientation Stream (`/orientation`) ⚡
 - **Purpose**: High-frequency, low-latency orientation data for real-time applications
 - **Behavior**:
   - **Immediate delivery**: Orientation data (alpha, beta, gamma) sent as soon as received
@@ -64,7 +64,7 @@ The multi-user server (`multi-user-server.js`) supports five types of connection
   - **Read-only**: Listeners cannot send data
 - **Ideal for**: 3D visualizations, AR/VR experiences, motion-controlled applications
 
-### 5. Batched Bulk Data Stream (`/bulk`) 📦 NEW
+### 5. Batched Bulk Data Stream (`/bulk`) 📦
 - **Purpose**: Efficient delivery of non-time-critical data (GPS, weather, photos, audio)
 - **Behavior**:
   - **Batched delivery**: Data queued and sent in batches at regular intervals (default: 1 second)
