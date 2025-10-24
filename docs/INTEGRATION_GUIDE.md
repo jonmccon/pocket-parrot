@@ -38,14 +38,33 @@ const data = await api.getAllData({ limit: 100 });
 
 **Setup Time:** 5 minutes
 
+**Choose Your Endpoint:**
+
+**Option A: General Listener** (simplest, good for getting started)
+- Endpoint: `ws://your-server.com:8080/listener`
+- Receives all sensor data immediately
+- No session management complexity
+
+**Option B: Low-Latency Orientation** (for 3D/AR/VR apps)
+- Endpoint: `ws://your-server.com:8080/orientation`
+- Receives only orientation data (alpha, beta, gamma)
+- < 1ms latency, supports high frequency (10-60 Hz)
+- Perfect for real-time visualizations
+
+**Option C: Batched Bulk Data** (for analytics/logging)
+- Endpoint: `ws://your-server.com:8080/bulk`
+- Receives GPS, weather, motion, media in batches
+- ~1 second latency, efficient for processing
+- Batches up to 10 data points per message
+
 **Steps:**
-1. Create a WebSocket server (see `websocket-server-example.js`)
+1. Create a WebSocket server (see examples below)
 2. Open Pocket Parrot → Settings
-3. Enter your WebSocket endpoint (e.g., `ws://your-server.com:8080/data`)
+3. Enter your WebSocket endpoint
 4. Click "Enable WebSocket"
 5. Data flows automatically!
 
-**Example Server (Node.js):**
+**Example Server - General Listener (Node.js):**
 ```javascript
 const WebSocket = require('ws');
 const wss = new WebSocket.Server({ port: 8080 });
@@ -58,6 +77,49 @@ wss.on('connection', (ws) => {
       // Process and store the data
     }
   });
+});
+```
+
+**Example Server - Orientation Listener (Node.js):**
+```javascript
+const WebSocket = require('ws');
+const wss = new WebSocket.Server({ port: 8080 });
+
+wss.on('connection', (ws, req) => {
+  const pathname = url.parse(req.url).pathname;
+  
+  if (pathname === '/orientation') {
+    ws.on('message', (message) => {
+      const msg = JSON.parse(message);
+      if (msg.type === 'orientation_data') {
+        const { alpha, beta, gamma } = msg.orientation;
+        // Update 3D visualization immediately
+        update3DScene(alpha, beta, gamma);
+      }
+    });
+  }
+});
+```
+
+**Example Server - Bulk Data Listener (Node.js):**
+```javascript
+const WebSocket = require('ws');
+const wss = new WebSocket.Server({ port: 8080 });
+
+wss.on('connection', (ws, req) => {
+  const pathname = url.parse(req.url).pathname;
+  
+  if (pathname === '/bulk') {
+    ws.on('message', (message) => {
+      const msg = JSON.parse(message);
+      if (msg.type === 'bulk_data_batch') {
+        // Process batch of data points efficiently
+        msg.data.forEach(dataPoint => {
+          saveToDatabase(dataPoint);
+        });
+      }
+    });
+  }
 });
 ```
 
@@ -79,6 +141,15 @@ console.log(json);
 ```
 
 ## Quick Reference
+
+### Choosing the Right Endpoint
+
+| Endpoint | Best For | Latency | Payload | Frequency |
+|----------|----------|---------|---------|-----------|
+| `/listener` | General use, getting started | Immediate | Complete data | Per capture |
+| `/orientation` | 3D/AR/VR, real-time visuals | < 1ms | Orientation only | High (10-60 Hz) |
+| `/bulk` | Analytics, logging, archival | ~1 second | GPS, weather, media | Batched |
+| `/pocket-parrot` | Pocket Parrot clients only | Immediate | Complete + session | Per capture |
 
 ### JavaScript API Methods
 

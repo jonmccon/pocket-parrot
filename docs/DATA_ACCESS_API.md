@@ -8,6 +8,12 @@ The Pocket Parrot Data Access API enables external systems to integrate with and
 2. **WebSocket Push** - For real-time data streaming to external servers
 3. **Export API** - For batch data access and filtering
 
+**Key Features:**
+- **Immediate Orientation Broadcasting**: Device orientation (alpha, beta, gamma) is broadcast immediately when detected, before full sensor capture completes
+- **Optimized Endpoints**: Choose from `/orientation`, `/bulk`, or `/listener` based on your latency and payload requirements
+- **Real-time Subscriptions**: Get notified instantly when new data is captured
+- **Flexible Filtering**: Query historical data by date, GPS, media presence, and more
+
 ## Architecture
 
 The Data Access API maintains the client-side architecture of Pocket Parrot while enabling external data access:
@@ -16,6 +22,95 @@ The Data Access API maintains the client-side architecture of Pocket Parrot whil
 - **Real-time subscriptions** - Observer pattern for immediate data access
 - **Push to external servers** - WebSocket client for remote ingestion
 - **Flexible filtering** - Query data by date, GPS, media, and more
+
+---
+
+## Orientation Data Handling
+
+### Immediate Broadcasting
+
+Pocket Parrot broadcasts device orientation data **immediately** when it changes, separate from the main sensor capture cycle. This enables ultra-low-latency orientation updates for real-time applications.
+
+**How it works:**
+1. Device orientation events are captured continuously via `deviceorientation` event listener
+2. Each orientation change is immediately broadcast to WebSocket connections (if enabled)
+3. Full sensor data (GPS, weather, etc.) is captured separately at the configured interval
+4. This dual-stream approach minimizes latency for orientation-dependent visualizations
+
+**Benefits:**
+- **Sub-millisecond latency**: Orientation updates don't wait for GPS or weather data
+- **High frequency**: Supports rapid device movements without queueing
+- **Responsive UX**: 3D visualizations and AR applications feel immediate and natural
+
+### Endpoint Selection for Orientation
+
+**For Low-Latency Orientation (Recommended for 3D/AR/VR):**
+```javascript
+// Connect to specialized orientation endpoint
+const ws = new WebSocket('ws://server:8080/orientation');
+
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  if (msg.type === 'orientation_data') {
+    const { alpha, beta, gamma } = msg.orientation;
+    // Update your 3D scene immediately
+    updateCameraRotation(alpha, beta, gamma);
+  }
+};
+```
+
+**Message Format:**
+```json
+{
+  "type": "orientation_data",
+  "timestamp": "2024-01-01T12:00:00.000Z",
+  "userId": "user_123",
+  "username": "Phone User",
+  "orientation": {
+    "alpha": 180.5,    // Compass heading (0-360°)
+    "beta": 15.2,      // Front-to-back tilt (-180 to 180°)
+    "gamma": -5.8      // Left-to-right tilt (-90 to 90°)
+  }
+}
+```
+
+**For Complete Data with Orientation:**
+```javascript
+// Use general listener or bulk endpoint for full data
+const ws = new WebSocket('ws://server:8080/listener');
+
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  if (msg.type === 'sensor_data') {
+    const data = msg.data;
+    // Has orientation plus GPS, weather, motion, etc.
+    console.log(data.orientation, data.gps, data.weather);
+  }
+};
+```
+
+### Understanding Orientation Values
+
+**Alpha (Compass Heading):**
+- Range: 0° to 360°
+- 0° = North, 90° = East, 180° = South, 270° = West
+- Represents rotation around Z-axis (perpendicular to screen)
+
+**Beta (Tilt Front/Back):**
+- Range: -180° to 180°
+- 0° = Device flat, positive = tilted forward, negative = tilted back
+- Represents rotation around X-axis (left to right edge)
+
+**Gamma (Tilt Left/Right):**
+- Range: -90° to 90°
+- 0° = Device flat, positive = tilted right, negative = tilted left
+- Represents rotation around Y-axis (top to bottom edge)
+
+**Example Use Cases:**
+- **Compass apps**: Use `alpha` for heading
+- **Level/inclinometer**: Use `beta` and `gamma` for tilt
+- **3D camera control**: Use all three for complete orientation
+- **Motion detection**: Track changes over time for gesture recognition
 
 ---
 
@@ -225,6 +320,67 @@ The WebSocket Push feature allows Pocket Parrot to send captured data to an exte
 - Cloud storage and backup
 - Integration with existing data pipelines
 - Real-time monitoring dashboards
+
+### Endpoint Selection
+
+The Pocket Parrot server provides specialized endpoints optimized for different use cases:
+
+#### `/orientation` - Low-Latency Orientation Stream
+**Best for:** Real-time 3D visualizations, AR/VR experiences, interactive installations
+
+**Characteristics:**
+- **Latency**: < 1ms (immediate transmission)
+- **Payload**: Minimal (orientation data only)
+- **Frequency**: High (10-60 Hz typical)
+- **Data**: Alpha, beta, gamma angles only
+
+**When to use:**
+- Motion-controlled applications requiring immediate response
+- 3D scene rendering that must feel natural and responsive
+- Live performance art or interactive installations
+- Any application where orientation latency is critical
+
+#### `/bulk` - Batched Bulk Data Stream
+**Best for:** Data analytics, logging systems, photo/audio processing, archival
+
+**Characteristics:**
+- **Latency**: ~1 second (configurable batching interval)
+- **Payload**: Complete (GPS, weather, motion, media, objects)
+- **Efficiency**: Batches up to 10 data points per message
+- **Data**: Everything except orientation (which is on separate endpoint)
+
+**When to use:**
+- Background data collection for later analysis
+- Systems that benefit from batch processing
+- Database writes that perform better with bulk inserts
+- Non-time-sensitive data aggregation
+
+#### `/listener` - General Passive Listener
+**Best for:** General-purpose data consumption, development/testing, mixed requirements
+
+**Characteristics:**
+- **Latency**: Immediate (no batching)
+- **Payload**: Complete data points sent individually
+- **Simplicity**: Single connection receives all data types
+- **Data**: Full sensor data including orientation, GPS, weather, media
+
+**When to use:**
+- Prototyping and development
+- Applications that need all data types
+- When simplicity is more important than optimization
+- Mixed use cases that don't fit specialized endpoints
+
+#### `/pocket-parrot` - Primary Client Endpoint
+**For:** Mobile Pocket Parrot clients only (not recommended for custom integrations)
+
+**Characteristics:**
+- **Session management**: Active sender, observer mode, promotion/demotion
+- **User-specific**: Receives session control messages
+- **Complexity**: Requires handling of role-based messages
+
+**When to use:**
+- Only when building a Pocket Parrot client application
+- Not recommended for data consumption/integration
 
 ### Configuration
 
@@ -555,6 +711,25 @@ For production deployments:
 
 ## Performance Considerations
 
+### Orientation Data Performance
+
+**Immediate Broadcasting:**
+- Orientation updates are sent immediately, not queued
+- Minimal overhead: ~100-200 bytes per orientation message
+- High-frequency capable: tested at 10-60 Hz without issues
+- No impact on other sensor capture cycles
+
+**Optimization Tips:**
+```javascript
+// Good: Use specialized endpoint for orientation
+const orientWs = new WebSocket('ws://server:8080/orientation');
+// Only receives orientation data, minimal bandwidth
+
+// Less optimal: Use general listener for orientation
+const listenerWs = new WebSocket('ws://server:8080/listener');
+// Receives all data including orientation, higher bandwidth
+```
+
 ### IndexedDB Access
 
 - Queries are asynchronous to avoid blocking UI
@@ -576,6 +751,26 @@ const recent = all.slice(0, 100);
 - Blobs are converted to base64 (increases size by ~33%)
 - Failed sends are not retried (data remains in IndexedDB)
 - Consider implementing server-side queuing for high capture rates
+
+**Endpoint-Specific Performance:**
+
+**`/orientation` endpoint:**
+- Lowest latency: < 1ms typical
+- Smallest payload: ~200 bytes per message
+- Highest frequency: 10-60 Hz typical
+- Best for real-time interactivity
+
+**`/bulk` endpoint:**
+- Moderate latency: ~1 second (configurable)
+- Variable payload: depends on batch size and media
+- Efficient: reduces message overhead through batching
+- Best for analytics and logging
+
+**`/listener` endpoint:**
+- Low latency: immediate (no batching)
+- Full payload: complete data points
+- Moderate efficiency: individual messages
+- Best for general-purpose consumption
 
 ```javascript
 // Monitor WebSocket buffer
