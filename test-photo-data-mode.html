@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Photo Data Mode Test - Pocket Parrot</title>
+    <script src="config-photo-test.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        .test-result {
+            border-left: 4px solid #10B981;
+            background: rgba(16, 185, 129, 0.1);
+            padding: 1rem;
+            margin: 0.5rem 0;
+        }
+        .test-result.warning {
+            border-left-color: #F59E0B;
+            background: rgba(245, 158, 11, 0.1);
+        }
+        .test-result.error {
+            border-left-color: #EF4444;
+            background: rgba(239, 68, 68, 0.1);
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white">
+    <div class="container mx-auto px-4 py-8 max-w-4xl">
+        <h1 class="text-3xl font-bold mb-8">📸 Photo Data Mode Test</h1>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Configuration Panel -->
+            <div class="bg-gray-800 p-6 rounded-lg">
+                <h2 class="text-xl font-bold mb-4">🛠️ Test Configuration</h2>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Include Media Setting</label>
+                        <select id="includMediaTest" class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2">
+                            <option value="false">false (Only user photos)</option>
+                            <option value="true">true (Include in streaming)</option>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Data Mode</label>
+                        <select id="dataModeTest" class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2">
+                            <option value="gps">GPS Only</option>
+                            <option value="sensors">GPS + Sensors</option>
+                            <option value="full">Full Data</option>
+                        </select>
+                    </div>
+                    
+                    <button onclick="applyTestConfig()" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">
+                        Apply Configuration
+                    </button>
+                </div>
+                
+                <div class="mt-6 text-sm space-y-2">
+                    <h3 class="font-bold">Expected Behavior:</h3>
+                    <ul class="list-disc list-inside space-y-1 text-gray-300">
+                        <li><strong>User photos:</strong> Always included regardless of settings</li>
+                        <li><strong>Streaming photos:</strong> Only if includeMedia = true</li>
+                        <li><strong>Data mode:</strong> Doesn't affect photo inclusion</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <!-- Test Results Panel -->
+            <div class="bg-gray-800 p-6 rounded-lg">
+                <h2 class="text-xl font-bold mb-4">📊 Test Results</h2>
+                
+                <div class="space-y-4">
+                    <button onclick="testUserPhoto()" class="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded">
+                        Test User Photo Capture
+                    </button>
+                    
+                    <button onclick="testStreamingData()" class="w-full bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded">
+                        Test Streaming Data
+                    </button>
+                    
+                    <button onclick="clearResults()" class="w-full bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded">
+                        Clear Results
+                    </button>
+                </div>
+                
+                <div id="testResults" class="mt-4 space-y-2">
+                    <div class="test-result">
+                        Ready to test. Apply configuration and run tests.
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Configuration Display -->
+        <div class="mt-8 bg-gray-800 p-6 rounded-lg">
+            <h2 class="text-xl font-bold mb-4">🔍 Current Configuration</h2>
+            <pre id="configDisplay" class="bg-gray-900 p-4 rounded text-sm overflow-x-auto">
+Loading configuration...
+            </pre>
+        </div>
+        
+        <!-- Raw Data Display -->
+        <div class="mt-8 bg-gray-800 p-6 rounded-lg">
+            <h2 class="text-xl font-bold mb-4">📋 Raw Data Captured</h2>
+            <div class="max-h-96 overflow-y-auto">
+                <pre id="rawDataDisplay" class="bg-gray-900 p-4 rounded text-sm">
+No data captured yet...
+                </pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load the Pocket Parrot app -->
+    <script src="data-api.js"></script>
+    <script src="app.js"></script>
+    
+    <script>
+        let testApp = null;
+        let testAPI = null;
+        
+        // Wait for app to initialize
+        document.addEventListener('DOMContentLoaded', async () => {
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for app init
+            
+            testApp = window.app;
+            testAPI = window.pocketParrotAPI;
+            
+            if (testAPI) {
+                // Subscribe to data changes
+                testAPI.subscribe((dataPoint) => {
+                    displayRawData(dataPoint);
+                    analyzeDataPoint(dataPoint);
+                });
+                
+                updateConfigDisplay();
+                logResult('✅ Test environment initialized', 'success');
+            } else {
+                logResult('❌ Failed to initialize test environment', 'error');
+            }
+        });
+        
+        function applyTestConfig() {
+            const includeMedia = document.getElementById('includMediaTest').value === 'true';
+            const dataMode = document.getElementById('dataModeTest').value;
+            
+            if (!testAPI) {
+                logResult('❌ Test API not available', 'error');
+                return;
+            }
+            
+            // Configure the data API
+            testAPI.configure({
+                includeMedia: includeMedia,
+                debugMode: true
+            });
+            
+            // Update streaming config in localStorage to match
+            const streamingConfig = {
+                captureInterval: 5000,
+                dataMode: dataMode,
+                includeWeather: true,
+                includeMedia: includeMedia,
+                highAccuracyGPS: true
+            };
+            
+            localStorage.setItem('pocketParrot_streamingConfig', JSON.stringify(streamingConfig));
+            
+            updateConfigDisplay();
+            logResult(`✅ Configuration applied: includeMedia=${includeMedia}, dataMode=${dataMode}`, 'success');
+        }
+        
+        async function testUserPhoto() {
+            logResult('📸 Testing user photo capture...', 'info');
+            
+            try {
+                // Create a mock photo blob for testing
+                const canvas = document.createElement('canvas');
+                canvas.width = 400;
+                canvas.height = 300;
+                const ctx = canvas.getContext('2d');
+                
+                // Draw a test image
+                ctx.fillStyle = '#FF6B6B';
+                ctx.fillRect(0, 0, 400, 300);
+                ctx.fillStyle = 'white';
+                ctx.font = '24px Arial';
+                ctx.fillText('USER PHOTO TEST', 50, 150);
+                ctx.fillText(new Date().toLocaleTimeString(), 50, 200);
+                
+                canvas.toBlob(async (blob) => {
+                    // Simulate user photo capture by calling savePhotoDataPoint directly
+                    if (testApp && testApp.savePhotoDataPoint) {
+                        await testApp.savePhotoDataPoint(blob);
+                        logResult('✅ User photo capture test completed', 'success');
+                    } else {
+                        logResult('❌ savePhotoDataPoint method not available', 'error');
+                    }
+                }, 'image/jpeg', 0.8);
+                
+            } catch (error) {
+                logResult(`❌ User photo test failed: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testStreamingData() {
+            logResult('📡 Testing streaming data capture...', 'info');
+            
+            try {
+                if (testApp && testApp.captureStreamingSample) {
+                    await testApp.captureStreamingSample();
+                    logResult('✅ Streaming data test completed', 'success');
+                } else {
+                    logResult('❌ captureStreamingSample method not available', 'error');
+                }
+            } catch (error) {
+                logResult(`❌ Streaming data test failed: ${error.message}`, 'error');
+            }
+        }
+        
+        function clearResults() {
+            document.getElementById('testResults').innerHTML = '<div class="test-result">Results cleared. Ready for new tests.</div>';
+            document.getElementById('rawDataDisplay').textContent = 'No data captured yet...';
+        }
+        
+        function logResult(message, type = 'info') {
+            const results = document.getElementById('testResults');
+            const div = document.createElement('div');
+            div.className = `test-result ${type === 'error' ? 'error' : type === 'warning' ? 'warning' : ''}`;
+            div.innerHTML = `<strong>[${new Date().toLocaleTimeString()}]</strong> ${message}`;
+            results.appendChild(div);
+            results.scrollTop = results.scrollHeight;
+        }
+        
+        function updateConfigDisplay() {
+            const config = {
+                dataAPI: testAPI ? testAPI.config : null,
+                streamingConfig: JSON.parse(localStorage.getItem('pocketParrot_streamingConfig') || '{}'),
+                currentSettings: {
+                    includeMedia: document.getElementById('includMediaTest').value,
+                    dataMode: document.getElementById('dataModeTest').value
+                }
+            };
+            
+            document.getElementById('configDisplay').textContent = JSON.stringify(config, null, 2);
+        }
+        
+        function displayRawData(dataPoint) {
+            const display = document.getElementById('rawDataDisplay');
+            const summary = {
+                timestamp: dataPoint.timestamp,
+                captureMethod: dataPoint.captureMethod,
+                hasGPS: !!dataPoint.gps,
+                hasOrientation: !!dataPoint.orientation,
+                hasMotion: !!dataPoint.motion,
+                hasWeather: !!dataPoint.weather,
+                hasPhoto: !!dataPoint.photoBase64,
+                photoSize: dataPoint.photoBase64 ? `${Math.round(dataPoint.photoBase64.length / 1024)}KB` : 'N/A',
+                objectCount: dataPoint.objectsDetected?.length || 0
+            };
+            
+            display.textContent = JSON.stringify(summary, null, 2) + '\n\n' + display.textContent;
+        }
+        
+        function analyzeDataPoint(dataPoint) {
+            const isUserPhoto = dataPoint.captureMethod === 'user_photo_capture';
+            const isStreaming = dataPoint.captureMethod === 'live_streaming';
+            const hasPhoto = !!dataPoint.photoBase64;
+            const currentIncludeMedia = testAPI?.config?.includeMedia;
+            
+            if (isUserPhoto) {
+                if (hasPhoto) {
+                    logResult('✅ User photo correctly included', 'success');
+                } else {
+                    logResult('❌ User photo missing - this is a bug!', 'error');
+                }
+            } else if (isStreaming) {
+                if (currentIncludeMedia && hasPhoto) {
+                    logResult('✅ Streaming photo included (includeMedia=true)', 'success');
+                } else if (!currentIncludeMedia && !hasPhoto) {
+                    logResult('✅ Streaming photo excluded (includeMedia=false)', 'success');
+                } else if (currentIncludeMedia && !hasPhoto) {
+                    logResult('⚠️ Streaming photo missing despite includeMedia=true', 'warning');
+                } else if (!currentIncludeMedia && hasPhoto) {
+                    logResult('❌ Streaming photo included despite includeMedia=false', 'error');
+                }
+            }
+        }
+    </script>
+</body>
+</html>

@@ -765,8 +765,7 @@ function queueBulkData(userId, username, sensorData) {
     weather: sensorData.weather || null,
     objectsDetected: sensorData.objectsDetected || [],
     photoBase64: sensorData.photoBase64 || null,
-    audioBase64: sensorData.audioBase64 || null,
-    colorPalette: sensorData.colorPalette || null
+    audioBase64: sensorData.audioBase64 || null
   };
   
   bulkDataQueue.push(bulkData);

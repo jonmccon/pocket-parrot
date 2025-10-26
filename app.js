@@ -10,7 +10,6 @@ class PocketParrot {
         this.captureInterval = null;
         this.currentPosition = null;
         this.locationWatchId = null;
-        this.objectDetectionModel = null;
         this.mediaRecorder = null;
         this.audioChunks = [];
         this.map = null;
@@ -633,12 +632,7 @@ class PocketParrot {
             document.getElementById('takePhotoBtn').classList.remove('hidden');
             document.getElementById('stopCameraBtn').classList.remove('hidden');
             
-            // Load object detection model if not already loaded
-            if (!this.objectDetectionModel) {
-                this.updateStatus('Loading object detection model...');
-                this.objectDetectionModel = await cocoSsd.load();
-                this.updateStatus('Ready');
-            }
+            this.updateStatus('Camera ready');
             
         } catch (error) {
             console.error('Error starting camera:', error);
@@ -690,38 +684,16 @@ class PocketParrot {
             capturedPhotoDisplay.classList.remove('hidden');
         });
         
-        // Extract color palette from the image
-        const colorPalette = this.extractColorPalette(canvas);
-        
-        // Run object detection
-        let detectedObjects = [];
-        if (this.objectDetectionModel) {
-            try {
-                this.updateStatus('Detecting objects...');
-                const predictions = await this.objectDetectionModel.detect(video);
-                detectedObjects = predictions.map(pred => ({
-                    class: pred.class,
-                    score: pred.score,
-                    bbox: pred.bbox
-                }));
-                
-                // Display enhanced results
-                this.displayEnhancedDetectionResults(detectedObjects, colorPalette);
-                this.updateStatus('Ready');
-            } catch (error) {
-                console.error('Object detection error:', error);
-                this.displayDetectionError();
-            }
-        }
+        this.updateStatus('Photo captured');
         
         // Convert canvas to blob and save photo as a data point
         return new Promise(resolve => {
             canvas.toBlob(async blob => {
                 // Save photo to database with all current sensor data
-                await this.savePhotoDataPoint(blob, detectedObjects, colorPalette);
+                await this.savePhotoDataPoint(blob);
                 
                 // Also return the photo data for backward compatibility
-                resolve({ blob, detectedObjects, colorPalette });
+                resolve({ blob });
             }, 'image/jpeg', 0.8);
         });
     }
@@ -729,7 +701,7 @@ class PocketParrot {
     /**
      * Save a photo as a complete data point with current sensor readings
      */
-    async savePhotoDataPoint(photoBlob, detectedObjects, colorPalette) {
+    async savePhotoDataPoint(photoBlob) {
         try {
             const timestamp = new Date().toISOString();
             const dataPoint = {
@@ -739,8 +711,7 @@ class PocketParrot {
                 orientation: null,
                 motion: null,
                 weather: null,
-                objectsDetected: detectedObjects || [],
-                colorPalette: colorPalette || [],
+                objectsDetected: [],
                 photoBlob: photoBlob,
                 audioBlob: null
             };
@@ -809,100 +780,6 @@ class PocketParrot {
             console.error('Error saving photo data point:', error);
             this.updateStatus('Failed to save photo');
         }
-    }
-
-
-    /**
-     * Extract dominant colors from canvas image
-     */
-    extractColorPalette(canvas) {
-        const ctx = canvas.getContext('2d');
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const data = imageData.data;
-        
-        // Sample pixels (every 10th pixel for performance)
-        const colorMap = new Map();
-        for (let i = 0; i < data.length; i += 40) { // RGBA, so skip by 40 to get every 10th pixel
-            const r = data[i];
-            const g = data[i + 1];
-            const b = data[i + 2];
-            
-            // Skip very dark or very light colors
-            const brightness = (r + g + b) / 3;
-            if (brightness < 30 || brightness > 240) continue;
-            
-            // Round colors to reduce variations
-            const roundedR = Math.round(r / 16) * 16;
-            const roundedG = Math.round(g / 16) * 16;
-            const roundedB = Math.round(b / 16) * 16;
-            
-            const colorKey = `${roundedR},${roundedG},${roundedB}`;
-            colorMap.set(colorKey, (colorMap.get(colorKey) || 0) + 1);
-        }
-        
-        // Sort by frequency and get top 5
-        const sortedColors = Array.from(colorMap.entries())
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 5)
-            .map(([color]) => {
-                const [r, g, b] = color.split(',').map(Number);
-                return { r, g, b, hex: `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}` };
-            });
-        
-        return sortedColors;
-    }
-
-    /**
-     * Display enhanced detection results with objects and color palette
-     */
-    displayEnhancedDetectionResults(detectedObjects, colorPalette) {
-        const resultsContainer = document.getElementById('detectionResults');
-        const objectsContainer = document.getElementById('objectsContainer');
-        const colorPaletteContainer = document.getElementById('colorPalette');
-        const statusElement = document.getElementById('detectionStatus');
-        
-        // Clear previous results
-        objectsContainer.innerHTML = '';
-        colorPaletteContainer.innerHTML = '';
-        
-        // Display detected objects
-        if (detectedObjects.length > 0) {
-            detectedObjects.forEach(obj => {
-                const objectTag = document.createElement('span');
-                objectTag.className = 'inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full';
-                objectTag.textContent = `${obj.class} (${(obj.score * 100).toFixed(1)}%)`;
-                objectsContainer.appendChild(objectTag);
-            });
-            statusElement.textContent = `Found ${detectedObjects.length} object${detectedObjects.length > 1 ? 's' : ''}`;
-        } else {
-            statusElement.textContent = 'No objects detected';
-        }
-        
-        // Display color palette
-        if (colorPalette.length > 0) {
-            colorPalette.forEach((color, index) => {
-                const colorSwatch = document.createElement('div');
-                colorSwatch.className = 'w-8 h-8 rounded border-2 border-gray-300';
-                colorSwatch.style.backgroundColor = color.hex;
-                colorSwatch.title = `Color ${index + 1}: ${color.hex}`;
-                colorPaletteContainer.appendChild(colorSwatch);
-            });
-        }
-        
-        // Show results container
-        resultsContainer.classList.remove('hidden');
-    }
-
-    /**
-     * Display detection error
-     */
-    displayDetectionError() {
-        const resultsContainer = document.getElementById('detectionResults');
-        const statusElement = document.getElementById('detectionStatus');
-        
-        statusElement.textContent = 'Object detection failed';
-        statusElement.className = 'text-sm text-red-600';
-        resultsContainer.classList.remove('hidden');
     }
 
     /**
@@ -2458,6 +2335,15 @@ class PocketParrot {
             // Apply configuration
             this.captureIntervalMs = captureInterval;
             
+            // Synchronize Data API configuration
+            if (window.pocketParrotAPI) {
+                window.pocketParrotAPI.configure({
+                    includeMedia: includeMedia,
+                    debugMode: window.pocketParrotAPI.config?.debugMode || false
+                });
+                console.log(`📡 Data API synced: includeMedia=${includeMedia}`);
+            }
+            
             this.updateStatus('Streaming configuration saved');
             console.log('📊 Streaming configuration saved:', config);
             
@@ -2658,6 +2544,15 @@ async function applyConfiguration() {
         if (app) {
             app.captureIntervalMs = parseInt(captureInterval);
             console.log(`📊 Capture interval set to: ${app.captureIntervalMs}ms`);
+        }
+        
+        // Configure Data API with streaming settings
+        if (dataAPI) {
+            dataAPI.configure({
+                includeMedia: includeMedia,
+                debugMode: eventMode || config.DEBUG_MODE || false
+            });
+            console.log(`📡 Data API configured: includeMedia=${includeMedia}, debugMode=${eventMode || config.DEBUG_MODE || false}`);
         }
         
         // Also update UI if settings page is loaded

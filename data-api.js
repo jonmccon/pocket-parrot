@@ -563,15 +563,32 @@ class PocketParrotDataAPI {
     }
 
     /**
-     * Load saved WebSocket configuration
+     * Load saved WebSocket configuration and streaming settings
      */
     loadConfiguration() {
         const savedEndpoint = localStorage.getItem('pocketParrot_wsEndpoint');
         const savedEnabled = localStorage.getItem('pocketParrot_wsEnabled') === 'true';
+        const streamingConfig = localStorage.getItem('pocketParrot_streamingConfig');
         
         if (savedEndpoint) {
             this.wsEndpoint = savedEndpoint;
             console.log('📡 Loaded saved WebSocket endpoint:', savedEndpoint);
+        }
+        
+        // Load and apply streaming configuration
+        if (streamingConfig) {
+            try {
+                const config = JSON.parse(streamingConfig);
+                this.configure({
+                    includeMedia: config.includeMedia || false,
+                    debugMode: this.config?.debugMode || false
+                });
+                console.log('📡 Loaded streaming config for Data API:', {
+                    includeMedia: config.includeMedia || false
+                });
+            } catch (error) {
+                console.error('Failed to parse streaming configuration:', error);
+            }
         }
         
         // Don't auto-enable on load, require manual enable
