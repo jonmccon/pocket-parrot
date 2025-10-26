@@ -134,13 +134,20 @@ class PocketParrotDataAPI {
         
         if (dataPoint.photoBlob && shouldIncludePhoto) {
             console.log('🔍 [DEBUG] Converting photo blob to base64... (captureMethod:', dataPoint.captureMethod, ', includeMedia:', includeMedia, ')');
+            console.log('🔍 [DEBUG] Photo blob details:', {
+                size: dataPoint.photoBlob.size,
+                type: dataPoint.photoBlob.type,
+                isValid: dataPoint.photoBlob instanceof Blob
+            });
             try {
                 // Downsample photo before converting to base64
                 safe.photoBase64 = await this.downsampleAndConvertPhoto(dataPoint.photoBlob);
                 delete safe.photoBlob;
                 console.log('🔍 [DEBUG] Photo conversion complete, size:', safe.photoBase64 ? safe.photoBase64.length : 0);
+                console.log('✅ Photo successfully converted and will be transmitted');
             } catch (error) {
                 console.error('❌ Failed to convert photo to base64:', error);
+                console.error('❌ Photo blob that failed:', dataPoint.photoBlob);
                 // Don't include corrupted photo data
                 delete safe.photoBlob;
             }
@@ -475,6 +482,7 @@ class PocketParrotDataAPI {
             
             console.log('📤 Preparing to push data to WebSocket:', {
                 timestamp: safeDataPoint.timestamp,
+                captureMethod: safeDataPoint.captureMethod,
                 hasGPS: !!safeDataPoint.gps,
                 gpsValues: safeDataPoint.gps ? {
                     lat: safeDataPoint.gps.latitude,

@@ -773,6 +773,23 @@ class PocketParrot {
             await this.saveDataPoint(dataPoint);
             await this.updateRecordCount();
             
+            // Debug: Check if Data API is available and configured
+            if (window.pocketParrotAPI) {
+                const apiStatus = window.pocketParrotAPI.getStatus();
+                console.log('📡 Data API Status after photo capture:', apiStatus);
+                
+                if (apiStatus.wsEnabled && apiStatus.wsConnected) {
+                    console.log('✅ WebSocket is enabled and connected - photo should be transmitted');
+                } else {
+                    console.warn('⚠️ WebSocket not enabled or not connected - photo will NOT be transmitted');
+                    console.log('WebSocket enabled:', apiStatus.wsEnabled);
+                    console.log('WebSocket connected:', apiStatus.wsConnected);
+                    console.log('Available connections:', apiStatus.connectionCount);
+                }
+            } else {
+                console.warn('⚠️ Data API not available - photos will NOT be transmitted');
+            }
+            
             this.updateStatus('Photo captured and saved');
             console.log('📸 Photo captured by user and saved to database');
             

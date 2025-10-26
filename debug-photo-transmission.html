@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Photo Transmission - Pocket Parrot</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #1f2937;
+            color: #e5e7eb;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .log {
+            background: #111827;
+            border: 1px solid #374151;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+            border-radius: 4px;
+        }
+        .log-info { background: #065f46; }
+        .log-error { background: #7f1d1d; }
+        .log-success { background: #064e3b; }
+        .button {
+            background: #059669;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 10px;
+            font-size: 16px;
+        }
+        .button:hover {
+            background: #047857;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 6px;
+            border: 1px solid;
+        }
+        .status-disconnected {
+            background: #7f1d1d;
+            border-color: #dc2626;
+        }
+        .status-connected {
+            background: #064e3b;
+            border-color: #059669;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🦜 Photo Transmission Debug Tool</h1>
+        
+        <div id="connectionStatus" class="status status-disconnected">
+            WebSocket: Disconnected
+        </div>
+        
+        <div>
+            <input type="text" id="wsEndpoint" placeholder="ws://localhost:8080/pocket-parrot" 
+                   style="width: 300px; padding: 8px; margin: 10px; background: #374151; color: white; border: 1px solid #6b7280; border-radius: 4px;">
+            <button class="button" onclick="connectWebSocket()">Connect</button>
+            <button class="button" onclick="disconnectWebSocket()">Disconnect</button>
+        </div>
+        
+        <div>
+            <button class="button" onclick="testPhotoTransmission()">Test Photo Transmission</button>
+            <button class="button" onclick="clearLog()">Clear Log</button>
+        </div>
+        
+        <div>
+            <label>
+                <input type="checkbox" id="includeMediaCheckbox" checked> Include Media in Transmission
+            </label>
+        </div>
+        
+        <div class="log" id="debugLog"></div>
+        
+        <!-- Hidden canvas for photo creation -->
+        <canvas id="testCanvas" width="320" height="240" style="display: none;"></canvas>
+    </div>
+
+    <script>
+        let ws = null;
+        let logContainer = document.getElementById('debugLog');
+        let statusContainer = document.getElementById('connectionStatus');
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = `[${timestamp}] ${message}`;
+            logContainer.appendChild(entry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+        
+        function updateStatus(connected) {
+            if (connected) {
+                statusContainer.textContent = 'WebSocket: Connected';
+                statusContainer.className = 'status status-connected';
+            } else {
+                statusContainer.textContent = 'WebSocket: Disconnected';
+                statusContainer.className = 'status status-disconnected';
+            }
+        }
+        
+        function connectWebSocket() {
+            const endpoint = document.getElementById('wsEndpoint').value || 'ws://localhost:8080/pocket-parrot';
+            
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                log('Already connected to WebSocket', 'info');
+                return;
+            }
+            
+            try {
+                log(`Connecting to WebSocket: ${endpoint}`, 'info');
+                ws = new WebSocket(endpoint);
+                
+                ws.onopen = () => {
+                    log('WebSocket connected successfully', 'success');
+                    updateStatus(true);
+                };
+                
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        log(`Received: ${data.type || 'unknown'} - ${JSON.stringify(data).substring(0, 200)}...`, 'info');
+                    } catch (e) {
+                        log(`Received (raw): ${event.data.substring(0, 200)}...`, 'info');
+                    }
+                };
+                
+                ws.onerror = (error) => {
+                    log(`WebSocket error: ${error}`, 'error');
+                };
+                
+                ws.onclose = () => {
+                    log('WebSocket connection closed', 'info');
+                    updateStatus(false);
+                };
+            } catch (error) {
+                log(`Failed to connect: ${error.message}`, 'error');
+            }
+        }
+        
+        function disconnectWebSocket() {
+            if (ws) {
+                ws.close();
+                ws = null;
+                log('WebSocket disconnected manually', 'info');
+                updateStatus(false);
+            }
+        }
+        
+        async function testPhotoTransmission() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('WebSocket not connected - cannot test photo transmission', 'error');
+                return;
+            }
+            
+            log('Creating test photo...', 'info');
+            
+            // Create a test photo using canvas
+            const canvas = document.getElementById('testCanvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Draw a simple test pattern
+            ctx.fillStyle = '#4a5568';
+            ctx.fillRect(0, 0, 320, 240);
+            ctx.fillStyle = '#68d391';
+            ctx.fillRect(50, 50, 220, 140);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '20px Arial';
+            ctx.fillText('TEST PHOTO', 110, 125);
+            ctx.fillText(new Date().toLocaleTimeString(), 90, 150);
+            
+            // Convert canvas to blob
+            canvas.toBlob(async (blob) => {
+                try {
+                    log(`Test photo created: ${blob.size} bytes`, 'info');
+                    
+                    // Create a mock data point like the app would
+                    const dataPoint = {
+                        timestamp: new Date().toISOString(),
+                        captureMethod: 'user_photo_capture',
+                        gps: {
+                            latitude: 47.6062,
+                            longitude: -122.3321,
+                            altitude: 56,
+                            accuracy: 10,
+                            speed: null,
+                            heading: null
+                        },
+                        orientation: {
+                            alpha: 45,
+                            beta: 10,
+                            gamma: 5
+                        },
+                        motion: {
+                            accelerationX: 0.1,
+                            accelerationY: 0.2,
+                            accelerationZ: 9.8
+                        },
+                        weather: null,
+                        objectsDetected: [],
+                        photoBlob: blob,
+                        audioBlob: null
+                    };
+                    
+                    log('Converting photo blob to base64...', 'info');
+                    
+                    // Convert blob to base64 like the Data API does
+                    const includeMedia = document.getElementById('includeMediaCheckbox').checked;
+                    const isUserPhotoCapture = dataPoint.captureMethod === 'user_photo_capture';
+                    const shouldIncludePhoto = isUserPhotoCapture || includeMedia;
+                    
+                    log(`Photo inclusion logic: isUserPhotoCapture=${isUserPhotoCapture}, includeMedia=${includeMedia}, shouldIncludePhoto=${shouldIncludePhoto}`, 'info');
+                    
+                    const safeDataPoint = { ...dataPoint };
+                    delete safeDataPoint.audioBlob;
+                    
+                    if (shouldIncludePhoto && dataPoint.photoBlob) {
+                        const photoBase64 = await convertBlobToBase64(dataPoint.photoBlob);
+                        safeDataPoint.photoBase64 = photoBase64;
+                        delete safeDataPoint.photoBlob;
+                        log(`Photo converted to base64: ${photoBase64.length} characters`, 'success');
+                    } else {
+                        delete safeDataPoint.photoBlob;
+                        log('Photo excluded from transmission', 'info');
+                    }
+                    
+                    // Send the data like the Data API would
+                    const message = JSON.stringify({
+                        type: 'data',
+                        timestamp: new Date().toISOString(),
+                        data: safeDataPoint
+                    });
+                    
+                    log(`Sending message: ${Math.round(message.length / 1024)}KB`, 'info');
+                    ws.send(message);
+                    log('Test photo transmitted successfully!', 'success');
+                    
+                } catch (error) {
+                    log(`Failed to transmit test photo: ${error.message}`, 'error');
+                    console.error('Photo transmission error:', error);
+                }
+            }, 'image/jpeg', 0.8);
+        }
+        
+        function convertBlobToBase64(blob) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+        }
+        
+        function clearLog() {
+            logContainer.innerHTML = '';
+        }
+        
+        // Auto-connect if endpoint is provided in URL
+        window.addEventListener('load', () => {
+            const params = new URLSearchParams(window.location.search);
+            const endpoint = params.get('ws') || params.get('wsEndpoint');
+            if (endpoint) {
+                document.getElementById('wsEndpoint').value = endpoint;
+                setTimeout(connectWebSocket, 1000);
+            }
+        });
+    </script>
+</body>
+</html>
