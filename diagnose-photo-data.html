@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Photo Data Diagnosis - Pocket Parrot</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background: #1a1a1a;
+            color: #00ff00;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .section {
+            background: #2a2a2a;
+            border: 1px solid #333;
+            margin: 20px 0;
+            padding: 20px;
+            border-radius: 8px;
+        }
+        .section h2 {
+            color: #ffff00;
+            margin-top: 0;
+            border-bottom: 1px solid #444;
+            padding-bottom: 10px;
+        }
+        .connection-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        input[type="text"] {
+            background: #333;
+            color: #fff;
+            border: 1px solid #555;
+            padding: 8px;
+            border-radius: 4px;
+            flex: 1;
+            min-width: 200px;
+        }
+        button {
+            background: #444;
+            color: #fff;
+            border: 1px solid #666;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #555;
+        }
+        button:disabled {
+            background: #222;
+            color: #666;
+            cursor: not-allowed;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .status.connected {
+            background: #004400;
+            border: 1px solid #00aa00;
+        }
+        .status.disconnected {
+            background: #440000;
+            border: 1px solid #aa0000;
+        }
+        .status.warning {
+            background: #443300;
+            border: 1px solid #aa7700;
+        }
+        .log {
+            background: #111;
+            border: 1px solid #333;
+            padding: 15px;
+            border-radius: 4px;
+            height: 300px;
+            overflow-y: auto;
+            font-size: 12px;
+            white-space: pre-wrap;
+        }
+        .clear-btn {
+            float: right;
+            margin-bottom: 10px;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: #333;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #444;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #00ffff;
+        }
+        .stat-label {
+            color: #aaa;
+            font-size: 14px;
+        }
+        .data-sample {
+            background: #1a1a2e;
+            border: 1px solid #16213e;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+            overflow-x: auto;
+        }
+        .json {
+            color: #e74c3c;
+        }
+        .key {
+            color: #3498db;
+        }
+        .string {
+            color: #2ecc71;
+        }
+        .number {
+            color: #f39c12;
+        }
+        .boolean {
+            color: #9b59b6;
+        }
+        .null {
+            color: #95a5a6;
+        }
+        .photo-preview {
+            max-width: 200px;
+            max-height: 200px;
+            border: 1px solid #444;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .issue {
+            background: #8b0000;
+            border: 1px solid #ff4444;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .success {
+            background: #004400;
+            border: 1px solid #44ff44;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #222;
+        }
+        .table th, .table td {
+            border: 1px solid #444;
+            padding: 8px;
+            text-align: left;
+        }
+        .table th {
+            background: #333;
+            color: #ffff00;
+        }
+        .table tr:nth-child(even) {
+            background: #2a2a2a;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Photo Data Transmission Diagnosis</h1>
+        
+        <div class="section">
+            <h2>📡 Connection Setup</h2>
+            <div class="connection-controls">
+                <input type="text" id="serverUrl" placeholder="ws://localhost:8080/listener" value="ws://localhost:8080/listener">
+                <button id="connectBtn" onclick="connect()">Connect</button>
+                <button id="disconnectBtn" onclick="disconnect()" disabled>Disconnect</button>
+            </div>
+            <div id="connectionStatus" class="status disconnected">
+                ⚫ Disconnected - Enter server URL and click Connect
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>📊 Real-time Statistics</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="totalMessages">0</div>
+                    <div class="stat-label">Total Messages</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="photoMessages">0</div>
+                    <div class="stat-label">Messages with Photos</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="photoPercentage">0%</div>
+                    <div class="stat-label">Photo Success Rate</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="avgPhotoSize">0KB</div>
+                    <div class="stat-label">Avg Photo Size</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="gpsMessages">0</div>
+                    <div class="stat-label">Messages with GPS</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="orientationMessages">0</div>
+                    <div class="stat-label">Messages with Orientation</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>🚨 Data Issues Detected</h2>
+            <div id="issuesContainer">
+                <div class="success">No issues detected yet. Start capturing data to begin analysis.</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>📝 Recent Photo Data</h2>
+            <table class="table" id="photoDataTable">
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Photo Size</th>
+                        <th>Object Count</th>
+                        <th>GPS</th>
+                        <th>Orientation</th>
+                        <th>Issues</th>
+                        <th>Preview</th>
+                    </tr>
+                </thead>
+                <tbody id="photoDataBody">
+                    <tr>
+                        <td colspan="7" style="text-align: center; color: #666;">No photo data received yet</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="section">
+            <h2>📋 Message Log</h2>
+            <button class="clear-btn" onclick="clearLog()">Clear Log</button>
+            <div id="messageLog" class="log">Waiting for connection...\n</div>
+        </div>
+
+        <div class="section">
+            <h2>🔬 Latest Message Analysis</h2>
+            <div id="latestMessage" class="data-sample">
+                No messages received yet
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let stats = {
+            total: 0,
+            withPhoto: 0,
+            withGPS: 0,
+            withOrientation: 0,
+            photoSizes: [],
+            issues: []
+        };
+        let recentPhotoData = [];
+
+        function log(message, type = 'info') {
+            const logElement = document.getElementById('messageLog');
+            const timestamp = new Date().toISOString();
+            const prefix = type === 'error' ? '❌' : type === 'warn' ? '⚠️' : type === 'success' ? '✅' : 'ℹ️';
+            logElement.textContent += `[${timestamp}] ${prefix} ${message}\n`;
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('messageLog').textContent = '';
+        }
+
+        function connect() {
+            const url = document.getElementById('serverUrl').value;
+            if (!url) {
+                log('Please enter a server URL', 'error');
+                return;
+            }
+
+            try {
+                ws = new WebSocket(url);
+                
+                ws.onopen = () => {
+                    log(`Connected to ${url}`, 'success');
+                    document.getElementById('connectionStatus').className = 'status connected';
+                    document.getElementById('connectionStatus').textContent = '🟢 Connected to ' + url;
+                    document.getElementById('connectBtn').disabled = true;
+                    document.getElementById('disconnectBtn').disabled = false;
+                };
+
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        analyzeMessage(data);
+                        updateStats();
+                        updateLatestMessage(data);
+                    } catch (error) {
+                        log(`Failed to parse message: ${error.message}`, 'error');
+                        log(`Raw message: ${event.data.substring(0, 200)}...`, 'warn');
+                    }
+                };
+
+                ws.onclose = () => {
+                    log('Connection closed', 'warn');
+                    document.getElementById('connectionStatus').className = 'status disconnected';
+                    document.getElementById('connectionStatus').textContent = '⚫ Disconnected';
+                    document.getElementById('connectBtn').disabled = false;
+                    document.getElementById('disconnectBtn').disabled = true;
+                };
+
+                ws.onerror = (error) => {
+                    log(`Connection error: ${error}`, 'error');
+                };
+
+            } catch (error) {
+                log(`Failed to connect: ${error.message}`, 'error');
+            }
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+
+        function analyzeMessage(data) {
+            stats.total++;
+            
+            if (data.type === 'sensor_data' && data.data) {
+                const sensorData = data.data;
+                const issues = [];
+                
+                log(`Received sensor data from ${data.username || data.userId}`, 'info');
+                
+                // Analyze photo data
+                if (sensorData.photoBase64) {
+                    stats.withPhoto++;
+                    const photoSize = sensorData.photoBase64.length;
+                    stats.photoSizes.push(photoSize);
+                    
+                    log(`Photo detected: ${Math.round(photoSize / 1024)}KB, ${sensorData.objectsDetected?.length || 0} objects`, 'success');
+                    
+                    // Check for photo issues
+                    if (photoSize < 1000) {
+                        issues.push('Photo size suspiciously small');
+                    }
+                    if (!sensorData.photoBase64.startsWith('data:image/')) {
+                        issues.push('Photo does not have proper data URL format');
+                    }
+                    
+                    // Add to recent photo data
+                    recentPhotoData.unshift({
+                        timestamp: sensorData.timestamp || new Date().toISOString(),
+                        photoSize: photoSize,
+                        objectCount: sensorData.objectsDetected?.length || 0,
+                        hasGPS: !!sensorData.gps,
+                        hasOrientation: !!sensorData.orientation,
+                        issues: [...issues],
+                        photoData: sensorData.photoBase64
+                    });
+                    
+                    // Keep only last 10 entries
+                    if (recentPhotoData.length > 10) {
+                        recentPhotoData.pop();
+                    }
+                } else {
+                    // Check if this should have had a photo
+                    if (sensorData.captureMethod === 'user_photo_capture') {
+                        issues.push('Expected photo data for user photo capture but none found');
+                        log('Missing photo in user photo capture!', 'error');
+                    }
+                }
+                
+                // Analyze GPS data
+                if (sensorData.gps) {
+                    stats.withGPS++;
+                    if (!sensorData.gps.latitude || !sensorData.gps.longitude) {
+                        issues.push('GPS data present but missing coordinates');
+                    }
+                } else if (sensorData.captureMethod !== 'orientation_only') {
+                    issues.push('No GPS data present');
+                }
+                
+                // Analyze orientation data
+                if (sensorData.orientation) {
+                    stats.withOrientation++;
+                    if (sensorData.orientation.alpha === null || sensorData.orientation.beta === null) {
+                        issues.push('Orientation data incomplete');
+                    }
+                }
+                
+                // Check for empty or corrupt data
+                if (!sensorData.gps && !sensorData.orientation && !sensorData.motion && !sensorData.photoBase64) {
+                    issues.push('Message contains no useful sensor data');
+                    log('Empty sensor data detected!', 'error');
+                }
+                
+                if (issues.length > 0) {
+                    issues.forEach(issue => {
+                        stats.issues.push({
+                            timestamp: new Date().toISOString(),
+                            issue: issue,
+                            data: JSON.stringify(sensorData, null, 2).substring(0, 500)
+                        });
+                    });
+                }
+                
+            } else if (data.type === 'bulk_data_batch' && data.data) {
+                log(`Received bulk data batch: ${data.batchSize} items`, 'info');
+                data.data.forEach(item => analyzeMessage({ type: 'sensor_data', data: item, userId: item.userId, username: item.username }));
+            } else {
+                log(`Received message type: ${data.type}`, 'info');
+            }
+        }
+
+        function updateStats() {
+            document.getElementById('totalMessages').textContent = stats.total;
+            document.getElementById('photoMessages').textContent = stats.withPhoto;
+            document.getElementById('gpsMessages').textContent = stats.withGPS;
+            document.getElementById('orientationMessages').textContent = stats.withOrientation;
+            
+            const photoPercentage = stats.total > 0 ? Math.round((stats.withPhoto / stats.total) * 100) : 0;
+            document.getElementById('photoPercentage').textContent = photoPercentage + '%';
+            
+            const avgSize = stats.photoSizes.length > 0 
+                ? Math.round(stats.photoSizes.reduce((a, b) => a + b, 0) / stats.photoSizes.length / 1024)
+                : 0;
+            document.getElementById('avgPhotoSize').textContent = avgSize + 'KB';
+            
+            updateIssues();
+            updatePhotoTable();
+        }
+
+        function updateIssues() {
+            const container = document.getElementById('issuesContainer');
+            
+            if (stats.issues.length === 0) {
+                container.innerHTML = '<div class="success">✅ No data consistency issues detected</div>';
+                return;
+            }
+            
+            const recentIssues = stats.issues.slice(-5); // Show last 5 issues
+            let html = '';
+            
+            recentIssues.forEach(issue => {
+                html += `
+                    <div class="issue">
+                        <strong>${issue.issue}</strong><br>
+                        <small>Time: ${issue.timestamp}</small><br>
+                        <details>
+                            <summary>Data Sample</summary>
+                            <pre>${issue.data}</pre>
+                        </details>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+        }
+
+        function updatePhotoTable() {
+            const tbody = document.getElementById('photoDataBody');
+            
+            if (recentPhotoData.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #666;">No photo data received yet</td></tr>';
+                return;
+            }
+            
+            let html = '';
+            recentPhotoData.forEach(photo => {
+                const issuesText = photo.issues.length > 0 ? photo.issues.join(', ') : 'None';
+                const issuesClass = photo.issues.length > 0 ? 'style="color: #ff6666;"' : '';
+                
+                html += `
+                    <tr>
+                        <td>${new Date(photo.timestamp).toLocaleTimeString()}</td>
+                        <td>${Math.round(photo.photoSize / 1024)}KB</td>
+                        <td>${photo.objectCount}</td>
+                        <td>${photo.hasGPS ? '✅' : '❌'}</td>
+                        <td>${photo.hasOrientation ? '✅' : '❌'}</td>
+                        <td ${issuesClass}>${issuesText}</td>
+                        <td>
+                            <img src="${photo.photoData}" class="photo-preview" onerror="this.style.display='none'" 
+                                 alt="Photo preview" title="Click to view full size" 
+                                 onclick="window.open('${photo.photoData}', '_blank')">
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            tbody.innerHTML = html;
+        }
+
+        function updateLatestMessage(data) {
+            const container = document.getElementById('latestMessage');
+            const formatted = syntaxHighlight(JSON.stringify(data, null, 2));
+            container.innerHTML = formatted;
+        }
+
+        function syntaxHighlight(json) {
+            json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+                let cls = 'number';
+                if (/^"/.test(match)) {
+                    if (/:$/.test(match)) {
+                        cls = 'key';
+                    } else {
+                        cls = 'string';
+                    }
+                } else if (/true|false/.test(match)) {
+                    cls = 'boolean';
+                } else if (/null/.test(match)) {
+                    cls = 'null';
+                }
+                return '<span class="' + cls + '">' + match + '</span>';
+            });
+        }
+
+        // Auto-connect if URL parameter is provided
+        window.addEventListener('load', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const server = urlParams.get('server');
+            if (server) {
+                document.getElementById('serverUrl').value = server;
+                setTimeout(connect, 500);
+            }
+        });
+
+        // Update stats every 5 seconds
+        setInterval(updateStats, 5000);
+    </script>
+</body>
+</html>

@@ -764,12 +764,15 @@ class PocketParrot {
                 const betaEl = document.getElementById('beta');
                 const gammaEl = document.getElementById('gamma');
                 
-                if (alphaEl && alphaEl.textContent !== '--') {
-                    dataPoint.orientation = {
-                        alpha: parseFloat(alphaEl.textContent),
-                        beta: parseFloat(betaEl.textContent),
-                        gamma: parseFloat(gammaEl.textContent)
-                    };
+                if (alphaEl && alphaEl.textContent !== '--' && alphaEl.textContent !== '') {
+                    const alpha = parseFloat(alphaEl.textContent);
+                    const beta = parseFloat(betaEl.textContent);
+                    const gamma = parseFloat(gammaEl.textContent);
+                    
+                    // Only include if we have valid numbers
+                    if (!isNaN(alpha) && !isNaN(beta) && !isNaN(gamma)) {
+                        dataPoint.orientation = { alpha, beta, gamma };
+                    }
                 }
             }
             
@@ -779,12 +782,19 @@ class PocketParrot {
                 const accelYEl = document.getElementById('accelY');
                 const accelZEl = document.getElementById('accelZ');
                 
-                if (accelXEl && accelXEl.textContent !== '--') {
-                    dataPoint.motion = {
-                        accelerationX: parseFloat(accelXEl.textContent),
-                        accelerationY: parseFloat(accelYEl.textContent),
-                        accelerationZ: parseFloat(accelZEl.textContent)
-                    };
+                if (accelXEl && accelXEl.textContent !== '--' && accelXEl.textContent !== '') {
+                    const x = parseFloat(accelXEl.textContent);
+                    const y = parseFloat(accelYEl.textContent);
+                    const z = parseFloat(accelZEl.textContent);
+                    
+                    // Only include if we have valid numbers
+                    if (!isNaN(x) && !isNaN(y) && !isNaN(z)) {
+                        dataPoint.motion = {
+                            accelerationX: x,
+                            accelerationY: y,
+                            accelerationZ: z
+                        };
+                    }
                 }
             }
             

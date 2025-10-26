@@ -12,9 +12,22 @@ class PocketParrotDataAPI {
         this.wsEndpoint = null;
         this.autoReconnect = true;
         this.reconnectDelay = 5000;
+        this.config = {
+            includeMedia: true, // Default to including media
+            debugMode: false
+        };
         
         // Listen for data updates
         this.setupDataListener();
+    }
+
+    /**
+     * Configure API settings
+     * @param {Object} config - Configuration options
+     */
+    configure(config) {
+        this.config = { ...this.config, ...config };
+        console.log('📡 Data API configured:', this.config);
     }
 
     /**
@@ -116,14 +129,24 @@ class PocketParrotDataAPI {
         // Always include photos from user-initiated captures, regardless of includeMedia setting
         // Only respect includeMedia setting for automatic streaming captures
         const isUserPhotoCapture = dataPoint.captureMethod === 'user_photo_capture';
-        const shouldIncludePhoto = isUserPhotoCapture || dataPoint.photoBlob;
+        const includeMedia = this.config?.includeMedia !== false; // Default to true if not set
+        const shouldIncludePhoto = isUserPhotoCapture || includeMedia;
         
         if (dataPoint.photoBlob && shouldIncludePhoto) {
-            console.log('🔍 [DEBUG] Converting photo blob to base64... (captureMethod:', dataPoint.captureMethod, ')');
-            // Downsample photo before converting to base64
-            safe.photoBase64 = await this.downsampleAndConvertPhoto(dataPoint.photoBlob);
+            console.log('🔍 [DEBUG] Converting photo blob to base64... (captureMethod:', dataPoint.captureMethod, ', includeMedia:', includeMedia, ')');
+            try {
+                // Downsample photo before converting to base64
+                safe.photoBase64 = await this.downsampleAndConvertPhoto(dataPoint.photoBlob);
+                delete safe.photoBlob;
+                console.log('🔍 [DEBUG] Photo conversion complete, size:', safe.photoBase64 ? safe.photoBase64.length : 0);
+            } catch (error) {
+                console.error('❌ Failed to convert photo to base64:', error);
+                // Don't include corrupted photo data
+                delete safe.photoBlob;
+            }
+        } else if (dataPoint.photoBlob && !shouldIncludePhoto) {
+            console.log('🔍 [DEBUG] Photo blob present but excluded by includeMedia setting');
             delete safe.photoBlob;
-            console.log('🔍 [DEBUG] Photo conversion complete, size:', safe.photoBase64 ? safe.photoBase64.length : 0);
         }
         
         // Remove audio from transmission - not needed for events
@@ -148,40 +171,74 @@ class PocketParrotDataAPI {
      */
     async downsampleAndConvertPhoto(photoBlob) {
         return new Promise((resolve, reject) => {
+            // Validate input
+            if (!photoBlob || !(photoBlob instanceof Blob)) {
+                reject(new Error('Invalid photo blob provided'));
+                return;
+            }
+            
             const img = new Image();
             const url = URL.createObjectURL(photoBlob);
             
-            img.onload = () => {
-                // Create canvas for downsampling
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
-                
-                // Calculate new dimensions (max 800px width)
-                const maxWidth = 800;
-                let width = img.width;
-                let height = img.height;
-                
-                if (width > maxWidth) {
-                    height = (height * maxWidth) / width;
-                    width = maxWidth;
-                }
-                
-                canvas.width = width;
-                canvas.height = height;
-                
-                // Draw downsampled image
-                ctx.drawImage(img, 0, 0, width, height);
-                
-                // Convert to base64 with compression (0.7 quality for JPEG)
-                const base64 = canvas.toDataURL('image/jpeg', 0.7);
-                
+            // Set timeout for image loading
+            const timeout = setTimeout(() => {
                 URL.revokeObjectURL(url);
-                resolve(base64);
+                reject(new Error('Photo loading timeout'));
+            }, 10000); // 10 second timeout
+            
+            img.onload = () => {
+                clearTimeout(timeout);
+                
+                try {
+                    // Create canvas for downsampling
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    
+                    // Validate image dimensions
+                    if (!img.width || !img.height || img.width < 1 || img.height < 1) {
+                        URL.revokeObjectURL(url);
+                        reject(new Error('Invalid image dimensions'));
+                        return;
+                    }
+                    
+                    // Calculate new dimensions (max 800px width)
+                    const maxWidth = 800;
+                    let width = img.width;
+                    let height = img.height;
+                    
+                    if (width > maxWidth) {
+                        height = (height * maxWidth) / width;
+                        width = maxWidth;
+                    }
+                    
+                    canvas.width = width;
+                    canvas.height = height;
+                    
+                    // Draw downsampled image
+                    ctx.drawImage(img, 0, 0, width, height);
+                    
+                    // Convert to base64 with compression (0.7 quality for JPEG)
+                    const base64 = canvas.toDataURL('image/jpeg', 0.7);
+                    
+                    // Validate base64 output
+                    if (!base64 || !base64.startsWith('data:image/')) {
+                        URL.revokeObjectURL(url);
+                        reject(new Error('Failed to generate valid base64 image'));
+                        return;
+                    }
+                    
+                    URL.revokeObjectURL(url);
+                    resolve(base64);
+                } catch (error) {
+                    URL.revokeObjectURL(url);
+                    reject(new Error(`Canvas processing failed: ${error.message}`));
+                }
             };
             
-            img.onerror = () => {
+            img.onerror = (error) => {
+                clearTimeout(timeout);
                 URL.revokeObjectURL(url);
-                reject(new Error('Failed to load image for downsampling'));
+                reject(new Error(`Failed to load image: ${error.message || 'Unknown error'}`));
             };
             
             img.src = url;
@@ -366,34 +423,55 @@ class PocketParrotDataAPI {
         }
         
         try {
+            // Validate input data point
+            if (!dataPoint || typeof dataPoint !== 'object') {
+                console.error('❌ Invalid dataPoint provided to pushToWebSocket');
+                return;
+            }
+            
             // Log original data point BEFORE preparation to debug empty values
-            console.log('🔍 [DEBUG] Original dataPoint before preparation:', {
-                timestamp: dataPoint.timestamp,
-                hasGPS: !!dataPoint.gps,
-                gpsRaw: dataPoint.gps,
-                hasOrientation: !!dataPoint.orientation,
-                orientationRaw: dataPoint.orientation,
-                hasMotion: !!dataPoint.motion,
-                motionRaw: dataPoint.motion,
-                hasWeather: !!dataPoint.weather,
-                weatherRaw: dataPoint.weather
-            });
+            if (this.config.debugMode) {
+                console.log('🔍 [DEBUG] Original dataPoint before preparation:', {
+                    timestamp: dataPoint.timestamp,
+                    captureMethod: dataPoint.captureMethod,
+                    hasGPS: !!dataPoint.gps,
+                    gpsRaw: dataPoint.gps,
+                    hasOrientation: !!dataPoint.orientation,
+                    orientationRaw: dataPoint.orientation,
+                    hasMotion: !!dataPoint.motion,
+                    motionRaw: dataPoint.motion,
+                    hasWeather: !!dataPoint.weather,
+                    weatherRaw: dataPoint.weather,
+                    hasPhotoBlob: !!dataPoint.photoBlob,
+                    photoBlobSize: dataPoint.photoBlob ? dataPoint.photoBlob.size : 0
+                });
+            }
             
             // Prepare safe data point
             const safeDataPoint = await this.prepareSafeDataPoint(dataPoint);
             
+            // Validate prepared data point
+            if (!safeDataPoint || typeof safeDataPoint !== 'object') {
+                console.error('❌ prepareSafeDataPoint returned invalid data');
+                return;
+            }
+            
             // Log prepared data to see if values changed during preparation
-            console.log('🔍 [DEBUG] After prepareSafeDataPoint:', {
-                timestamp: safeDataPoint.timestamp,
-                hasGPS: !!safeDataPoint.gps,
-                gpsAfterPrep: safeDataPoint.gps,
-                hasOrientation: !!safeDataPoint.orientation,
-                orientationAfterPrep: safeDataPoint.orientation,
-                hasMotion: !!safeDataPoint.motion,
-                motionAfterPrep: safeDataPoint.motion,
-                hasWeather: !!safeDataPoint.weather,
-                weatherAfterPrep: safeDataPoint.weather
-            });
+            if (this.config.debugMode) {
+                console.log('🔍 [DEBUG] After prepareSafeDataPoint:', {
+                    timestamp: safeDataPoint.timestamp,
+                    hasGPS: !!safeDataPoint.gps,
+                    gpsAfterPrep: safeDataPoint.gps,
+                    hasOrientation: !!safeDataPoint.orientation,
+                    orientationAfterPrep: safeDataPoint.orientation,
+                    hasMotion: !!safeDataPoint.motion,
+                    motionAfterPrep: safeDataPoint.motion,
+                    hasWeather: !!safeDataPoint.weather,
+                    weatherAfterPrep: safeDataPoint.weather,
+                    hasPhotoBase64: !!safeDataPoint.photoBase64,
+                    photoBase64Size: safeDataPoint.photoBase64 ? safeDataPoint.photoBase64.length : 0
+                });
+            }
             
             console.log('📤 Preparing to push data to WebSocket:', {
                 timestamp: safeDataPoint.timestamp,
