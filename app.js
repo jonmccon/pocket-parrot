@@ -26,6 +26,14 @@ class PocketParrot {
         // Network manager
         this.networkManager = null;
         
+        // Orientation optimization properties
+        this.lastOrientationUpdate = 0;
+        this.orientationUpdateThrottle = 50; // Update UI every 50ms (20 FPS) instead of 60+ FPS
+        this.lastOrientationBroadcast = 0;
+        this.orientationBroadcastThrottle = 100; // Broadcast every 100ms max (10 per second)
+        this.pendingOrientationUpdate = null;
+        this.orientationUpdateScheduled = false;
+        
         this.init();
     }
 
@@ -355,28 +363,63 @@ class PocketParrot {
 
     /**
      * Update orientation data display and broadcast to WebSocket if enabled
+     * Optimized with throttling to reduce DOM updates and network calls
      */
     updateOrientationData(event) {
-        document.getElementById('alpha').textContent = event.alpha ? event.alpha.toFixed(1) : '--';
-        document.getElementById('beta').textContent = event.beta ? event.beta.toFixed(1) : '--';
-        document.getElementById('gamma').textContent = event.gamma ? event.gamma.toFixed(1) : '--';
+        const now = Date.now();
+        
+        // Store the latest orientation data
+        this.pendingOrientationUpdate = {
+            alpha: event.alpha,
+            beta: event.beta,
+            gamma: event.gamma
+        };
+        
+        // Throttle UI updates using requestAnimationFrame
+        if (!this.orientationUpdateScheduled && now - this.lastOrientationUpdate >= this.orientationUpdateThrottle) {
+            this.orientationUpdateScheduled = true;
+            requestAnimationFrame(() => {
+                this.performOrientationUpdate();
+                this.orientationUpdateScheduled = false;
+                this.lastOrientationUpdate = Date.now();
+            });
+        }
+        
+        // Throttle WebSocket broadcasts separately (less frequent than UI updates)
+        if (now - this.lastOrientationBroadcast >= this.orientationBroadcastThrottle) {
+            if (window.pocketParrotAPI && window.pocketParrotAPI.getStatus().wsEnabled) {
+                this.broadcastOrientationToWebSocket(this.pendingOrientationUpdate);
+                this.lastOrientationBroadcast = now;
+            }
+        }
+    }
+    
+    /**
+     * Perform the actual orientation update in a batch
+     * Called via requestAnimationFrame for optimal performance
+     */
+    performOrientationUpdate() {
+        if (!this.pendingOrientationUpdate) return;
+        
+        const { alpha, beta, gamma } = this.pendingOrientationUpdate;
+        
+        // Batch DOM updates
+        const alphaEl = document.getElementById('alpha');
+        const betaEl = document.getElementById('beta');
+        const gammaEl = document.getElementById('gamma');
+        const compassEl = document.getElementById('compass');
+        
+        if (alphaEl) alphaEl.textContent = alpha !== null ? alpha.toFixed(1) : '--';
+        if (betaEl) betaEl.textContent = beta !== null ? beta.toFixed(1) : '--';
+        if (gammaEl) gammaEl.textContent = gamma !== null ? gamma.toFixed(1) : '--';
         
         // Calculate compass heading
-        if (event.alpha !== null) {
-            const compass = (360 - event.alpha) % 360;
-            document.getElementById('compass').textContent = compass.toFixed(1);
+        if (alpha !== null && compassEl) {
+            const compass = (360 - alpha) % 360;
+            compassEl.textContent = compass.toFixed(1);
             
             // Update visual orientation indicator
-            this.updateOrientationVisual(event.alpha, event.beta, event.gamma);
-            
-            // Broadcast orientation data immediately to WebSocket if enabled
-            if (window.pocketParrotAPI && window.pocketParrotAPI.getStatus().wsEnabled) {
-                this.broadcastOrientationToWebSocket({
-                    alpha: event.alpha,
-                    beta: event.beta,
-                    gamma: event.gamma
-                });
-            }
+            this.updateOrientationVisual(alpha, beta, gamma);
         }
     }
 
