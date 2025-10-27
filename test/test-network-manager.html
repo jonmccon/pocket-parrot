@@ -242,7 +242,8 @@
                 const time2 = Date.now() - start2;
                 
                 if (result2.cached) {
-                    log('weatherTestOutput', `✓ Second fetch used cache (${time2}ms) - ${Math.round(time1/time2)}x faster!`, 'success');
+                    const speedup = time2 > 0 ? Math.round(time1/time2) : 'many';
+                    log('weatherTestOutput', `✓ Second fetch used cache (${time2}ms) - ${speedup}x faster!`, 'success');
                     log('weatherTestOutput', `  Cache age: ${result2.cacheAge} seconds`, 'info');
                 } else {
                     log('weatherTestOutput', `⚠ Second fetch did not use cache`, 'warning');
@@ -318,11 +319,14 @@
             log('photoTestOutput', `  Max Width: ${config.maxPhotoWidth}px`, 'info');
             
             // Estimate compression
-            const baseSize = 2 * 1024 * 1024; // 2MB baseline
+            const BASELINE_PHOTO_SIZE_MB = 2; // 2MB baseline
+            const BYTES_PER_MB = 1024 * 1024;
+            const BYTES_PER_KB = 1024;
+            const baseSize = BASELINE_PHOTO_SIZE_MB * BYTES_PER_MB;
             const widthRatio = config.maxPhotoWidth / 800;
             const estimatedSize = baseSize * widthRatio * widthRatio * config.photoQuality;
             
-            log('photoTestOutput', `Estimated size for 2MB photo: ${Math.round(estimatedSize / 1024)}KB`, 'info');
+            log('photoTestOutput', `Estimated size for ${BASELINE_PHOTO_SIZE_MB}MB photo: ${Math.round(estimatedSize / BYTES_PER_KB)}KB`, 'info');
             log('photoTestOutput', `Compression ratio: ${Math.round((1 - estimatedSize / baseSize) * 100)}%`, 'success');
             
             if (status.quality === 'poor' && config.photoQuality <= 0.4) {

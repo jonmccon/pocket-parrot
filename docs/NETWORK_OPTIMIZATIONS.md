@@ -146,9 +146,14 @@ const stats = app.networkManager.getCacheStats();
 
 The optimizations gracefully degrade in older browsers:
 
-- **Network Information API**: Chrome 61+, Edge 79+, Opera 48+
+- **Network Information API**: 
+  - Chrome 61+, Edge 79+, Opera 48+
+  - **Firefox**: Limited support (behind flag, not enabled by default)
+  - **Safari**: Not supported
 - **Fallback**: Assumes good connection if API unavailable
 - **Core Functionality**: Works on all modern browsers
+
+**Note**: On Firefox and Safari, the app will work normally but won't adapt to network conditions automatically. All other features remain fully functional.
 
 ## Testing
 
