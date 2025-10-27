@@ -2127,16 +2127,16 @@ class PocketParrot {
     /**
      * Register service worker for offline support
      */
-    async registerServiceWorker() {
-        if ('serviceWorker' in navigator) {
-            try {
-                await navigator.serviceWorker.register('/service-worker.js');
-                console.log('Service Worker registered successfully');
-            } catch (error) {
-                console.log('Service Worker registration failed:', error);
-            }
-        }
-    }
+    // async registerServiceWorker() {
+    //     if ('serviceWorker' in navigator) {
+    //         try {
+    //             await navigator.serviceWorker.register('/service-worker.js');
+    //             console.log('Service Worker registered successfully');
+    //         } catch (error) {
+    //             console.log('Service Worker registration failed:', error);
+    //         }
+    //     }
+    // }
 
     /**
      * Initialize settings page

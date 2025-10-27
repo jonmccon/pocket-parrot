@@ -42,7 +42,7 @@ const PocketParrotConfig = {
      * When true, users cannot change WebSocket settings (event mode)
      * When false, users can configure and control WebSocket manually
      */
-    EVENT_MODE: false,
+    EVENT_MODE: true,
     
     /**
      * Auto-start capture after permissions are granted
