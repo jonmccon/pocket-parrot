@@ -184,6 +184,17 @@ class PocketParrotDataAPI {
                 return;
             }
             
+            // Get adaptive config from network manager if available
+            let maxWidth = 800;
+            let quality = 0.7;
+            
+            if (window.NetworkManager && this.app && this.app.networkManager) {
+                const adaptiveConfig = this.app.networkManager.getAdaptiveConfig();
+                maxWidth = adaptiveConfig.maxPhotoWidth;
+                quality = adaptiveConfig.photoQuality;
+                console.log(`📸 Using adaptive photo settings: ${maxWidth}px @ ${quality} quality`);
+            }
+            
             const img = new Image();
             const url = URL.createObjectURL(photoBlob);
             
@@ -208,8 +219,7 @@ class PocketParrotDataAPI {
                         return;
                     }
                     
-                    // Calculate new dimensions (max 800px width)
-                    const maxWidth = 800;
+                    // Calculate new dimensions
                     let width = img.width;
                     let height = img.height;
                     
@@ -224,8 +234,8 @@ class PocketParrotDataAPI {
                     // Draw downsampled image
                     ctx.drawImage(img, 0, 0, width, height);
                     
-                    // Convert to base64 with compression (0.7 quality for JPEG)
-                    const base64 = canvas.toDataURL('image/jpeg', 0.7);
+                    // Convert to base64 with adaptive compression
+                    const base64 = canvas.toDataURL('image/jpeg', quality);
                     
                     // Validate base64 output
                     if (!base64 || !base64.startsWith('data:image/')) {
@@ -233,6 +243,8 @@ class PocketParrotDataAPI {
                         reject(new Error('Failed to generate valid base64 image'));
                         return;
                     }
+                    
+                    console.log(`📸 Photo compressed: ${photoBlob.size} bytes -> ${base64.length} bytes (${Math.round(base64.length/photoBlob.size*100)}%)`);
                     
                     URL.revokeObjectURL(url);
                     resolve(base64);

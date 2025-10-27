@@ -23,11 +23,30 @@ class PocketParrot {
         this.samplesSent = 0;
         this.autoStartCapture = false; // Will be set by URL params or config
         
+        // Network manager
+        this.networkManager = null;
+        
+        // Orientation optimization properties
+        this.lastOrientationUpdate = 0;
+        this.orientationUpdateThrottle = 50; // Update UI every 50ms (20 FPS) instead of 60+ FPS
+        this.lastOrientationBroadcast = 0;
+        this.orientationBroadcastThrottle = 100; // Broadcast every 100ms max (10 per second)
+        this.pendingOrientationUpdate = null;
+        this.orientationUpdateScheduled = false;
+        
         this.init();
     }
 
     async init() {
         console.log('🦜 Initializing Pocket Parrot...');
+        
+        // Initialize Network Manager
+        if (typeof NetworkManager !== 'undefined') {
+            this.networkManager = new NetworkManager();
+            console.log('📡 Network Manager initialized');
+        } else {
+            console.warn('⚠️ Network Manager not available, using legacy mode');
+        }
         
         // Initialize IndexedDB
         await this.initDB();
@@ -43,6 +62,9 @@ class PocketParrot {
         
         // Register service worker
         this.registerServiceWorker();
+        
+        // Update network status display
+        this.updateNetworkStatus();
         
         console.log('✅ Pocket Parrot initialized successfully');
     }
@@ -293,29 +315,111 @@ class PocketParrot {
     }
 
     /**
+     * Show loading indicator for async operations
+     */
+    showLoadingIndicator(message = 'Loading...') {
+        const overlay = document.getElementById('loadingOverlay');
+        if (overlay) {
+            const textElement = overlay.querySelector('.text-center');
+            if (textElement) {
+                textElement.textContent = message;
+            }
+            overlay.classList.remove('hidden');
+        }
+    }
+
+    /**
+     * Hide loading indicator
+     */
+    hideLoadingIndicator() {
+        const overlay = document.getElementById('loadingOverlay');
+        if (overlay) {
+            overlay.classList.add('hidden');
+        }
+    }
+
+    /**
+     * Show inline loading spinner in an element
+     */
+    showInlineSpinner(elementId) {
+        const element = document.getElementById(elementId);
+        if (element) {
+            const spinner = document.createElement('div');
+            spinner.className = 'mini-spinner';
+            spinner.id = `${elementId}-spinner`;
+            element.prepend(spinner);
+        }
+    }
+
+    /**
+     * Remove inline loading spinner
+     */
+    hideInlineSpinner(elementId) {
+        const spinner = document.getElementById(`${elementId}-spinner`);
+        if (spinner) {
+            spinner.remove();
+        }
+    }
+
+    /**
      * Update orientation data display and broadcast to WebSocket if enabled
+     * Optimized with throttling to reduce DOM updates and network calls
      */
     updateOrientationData(event) {
-        document.getElementById('alpha').textContent = event.alpha ? event.alpha.toFixed(1) : '--';
-        document.getElementById('beta').textContent = event.beta ? event.beta.toFixed(1) : '--';
-        document.getElementById('gamma').textContent = event.gamma ? event.gamma.toFixed(1) : '--';
+        const now = Date.now();
+        
+        // Store the latest orientation data
+        this.pendingOrientationUpdate = {
+            alpha: event.alpha,
+            beta: event.beta,
+            gamma: event.gamma
+        };
+        
+        // Throttle UI updates using requestAnimationFrame
+        if (!this.orientationUpdateScheduled && now - this.lastOrientationUpdate >= this.orientationUpdateThrottle) {
+            this.orientationUpdateScheduled = true;
+            requestAnimationFrame(() => {
+                this.performOrientationUpdate();
+                this.orientationUpdateScheduled = false;
+                this.lastOrientationUpdate = Date.now();
+            });
+        }
+        
+        // Throttle WebSocket broadcasts separately (less frequent than UI updates)
+        if (now - this.lastOrientationBroadcast >= this.orientationBroadcastThrottle) {
+            if (window.pocketParrotAPI && window.pocketParrotAPI.getStatus().wsEnabled) {
+                this.broadcastOrientationToWebSocket(this.pendingOrientationUpdate);
+                this.lastOrientationBroadcast = now;
+            }
+        }
+    }
+    
+    /**
+     * Perform the actual orientation update in a batch
+     * Called via requestAnimationFrame for optimal performance
+     */
+    performOrientationUpdate() {
+        if (!this.pendingOrientationUpdate) return;
+        
+        const { alpha, beta, gamma } = this.pendingOrientationUpdate;
+        
+        // Batch DOM updates
+        const alphaEl = document.getElementById('alpha');
+        const betaEl = document.getElementById('beta');
+        const gammaEl = document.getElementById('gamma');
+        const compassEl = document.getElementById('compass');
+        
+        if (alphaEl) alphaEl.textContent = alpha !== null ? alpha.toFixed(1) : '--';
+        if (betaEl) betaEl.textContent = beta !== null ? beta.toFixed(1) : '--';
+        if (gammaEl) gammaEl.textContent = gamma !== null ? gamma.toFixed(1) : '--';
         
         // Calculate compass heading
-        if (event.alpha !== null) {
-            const compass = (360 - event.alpha) % 360;
-            document.getElementById('compass').textContent = compass.toFixed(1);
+        if (alpha !== null && compassEl) {
+            const compass = (360 - alpha) % 360;
+            compassEl.textContent = compass.toFixed(1);
             
             // Update visual orientation indicator
-            this.updateOrientationVisual(event.alpha, event.beta, event.gamma);
-            
-            // Broadcast orientation data immediately to WebSocket if enabled
-            if (window.pocketParrotAPI && window.pocketParrotAPI.getStatus().wsEnabled) {
-                this.broadcastOrientationToWebSocket({
-                    alpha: event.alpha,
-                    beta: event.beta,
-                    gamma: event.gamma
-                });
-            }
+            this.updateOrientationVisual(alpha, beta, gamma);
         }
     }
 
@@ -386,9 +490,78 @@ class PocketParrot {
     }
 
     /**
+     * Update network status display
+     */
+    updateNetworkStatus() {
+        if (!this.networkManager) return;
+
+        const statusDiv = document.getElementById('networkStatus');
+        const qualitySpan = document.getElementById('networkQuality');
+        const messageDiv = document.getElementById('networkMessage');
+
+        if (!statusDiv || !qualitySpan || !messageDiv) return;
+
+        const status = this.networkManager.getStatus();
+        
+        // Show status during streaming or if connection is slow
+        if (this.isLiveStreaming || status.isSlow || !status.isOnline) {
+            statusDiv.classList.remove('hidden');
+        } else {
+            statusDiv.classList.add('hidden');
+            return;
+        }
+
+        // Update quality indicator
+        let qualityText = '';
+        let qualityColor = '';
+        
+        if (!status.isOnline) {
+            qualityText = '🔴 Offline';
+            qualityColor = 'text-red-600';
+        } else if (status.quality === 'poor') {
+            qualityText = '🟠 Slow Connection';
+            qualityColor = 'text-orange-600';
+        } else if (status.quality === 'moderate') {
+            qualityText = '🟡 Moderate';
+            qualityColor = 'text-yellow-600';
+        } else {
+            qualityText = '🟢 Good';
+            qualityColor = 'text-green-600';
+        }
+
+        qualitySpan.textContent = qualityText;
+        qualitySpan.className = `font-medium ${qualityColor}`;
+
+        // Update message based on status
+        if (!status.isOnline) {
+            messageDiv.textContent = 'Data will be saved locally';
+        } else if (status.quality === 'poor') {
+            messageDiv.textContent = 'Reduced data frequency for better performance';
+        } else if (status.quality === 'moderate') {
+            messageDiv.textContent = 'Weather data cached to reduce lag';
+        } else {
+            messageDiv.textContent = 'All features available';
+        }
+
+        // Update periodically while streaming
+        if (this.isLiveStreaming) {
+            setTimeout(() => this.updateNetworkStatus(), 10000); // Every 10 seconds
+        }
+    }
+
+    /**
      * Fetch weather data for current location with enhanced status reporting
+     * Now delegates to NetworkManager for better caching and retry logic
      */
     async fetchWeatherData(lat, lon, locationSource = 'gps') {
+        // Use network manager if available
+        if (this.networkManager) {
+            const result = await this.networkManager.fetchWeatherData(lat, lon, locationSource);
+            this.updateWeatherUI(result);
+            return result;
+        }
+
+        // Fallback to original implementation if network manager not available
         const startTime = Date.now();
         
         // Validate input parameters
@@ -1097,8 +1270,35 @@ class PocketParrot {
         try {
             const timestamp = new Date().toISOString();
             
-            // Get streaming configuration
-            const config = this.getStreamingConfig();
+            // Get streaming configuration (may be adapted based on network)
+            let config = this.getStreamingConfig();
+            
+            // Apply adaptive configuration from network manager if available
+            if (this.networkManager) {
+                const adaptiveConfig = this.networkManager.getAdaptiveConfig();
+                
+                // Override config with adaptive settings on slow connections
+                if (adaptiveConfig.includeWeather === false) {
+                    config.includeWeather = false;
+                }
+                
+                // Adjust interval dynamically on poor connections
+                const status = this.networkManager.getStatus();
+                if (status.isSlow && adaptiveConfig.captureInterval !== this.captureIntervalMs) {
+                    console.log(`📡 Adapting capture interval: ${this.captureIntervalMs}ms -> ${adaptiveConfig.captureInterval}ms (${status.quality} connection)`);
+                    this.captureIntervalMs = adaptiveConfig.captureInterval;
+                    
+                    // Restart streaming with new interval
+                    if (this.streamingInterval) {
+                        clearInterval(this.streamingInterval);
+                        this.streamingInterval = setInterval(async () => {
+                            if (this.isLiveStreaming) {
+                                await this.captureStreamingSample();
+                            }
+                        }, this.captureIntervalMs);
+                    }
+                }
+            }
             
             const dataPoint = {
                 timestamp,
@@ -1161,6 +1361,7 @@ class PocketParrot {
             }
             
             // Get weather data based on configuration (less frequently to reduce API calls)
+            // Only fetch every 12 samples (~1 minute at 5s interval) or if forced by full mode
             if (config.includeWeather && (config.dataMode === 'full' || this.samplesSent % 12 === 0) && this.currentPosition) {
                 const weatherResult = await this.getWeatherWithFallback({
                     latitude: this.currentPosition.coords.latitude,
@@ -2195,6 +2396,8 @@ class PocketParrot {
      */
     async enableWebSocket() {
         try {
+            this.showLoadingIndicator('Connecting to server...');
+            
             if (window.pocketParrotAPI) {
                 await window.pocketParrotAPI.enableWebSocket();
                 this.updateStatus('WebSocket enabled');
@@ -2215,9 +2418,11 @@ class PocketParrot {
                         document.getElementById('wsStatusText').textContent = '⚠️ Connection failed - check endpoint and try again';
                         document.getElementById('wsStatusText').className = 'text-yellow-400';
                     }
+                    this.hideLoadingIndicator();
                 }, 2000);
             }
         } catch (error) {
+            this.hideLoadingIndicator();
             console.error('Error enabling WebSocket:', error);
             alert('Failed to enable WebSocket: ' + error.message);
         }
@@ -2256,6 +2461,7 @@ class PocketParrot {
             return;
         }
         
+        this.showLoadingIndicator('Testing connection...');
         this.updateStatus('Testing WebSocket connection...');
         document.getElementById('wsStatus').classList.remove('hidden');
         document.getElementById('wsStatusText').textContent = 'Testing connection...';
@@ -2269,6 +2475,7 @@ class PocketParrot {
                 document.getElementById('wsStatusText').textContent = '❌ Connection timeout';
                 document.getElementById('wsStatusText').className = 'text-red-400';
                 this.updateStatus('Connection test failed: timeout');
+                this.hideLoadingIndicator();
             }, 5000);
             
             ws.onopen = () => {
@@ -2277,6 +2484,7 @@ class PocketParrot {
                 document.getElementById('wsStatusText').className = 'text-green-400';
                 this.updateStatus('Connection test successful');
                 ws.close();
+                this.hideLoadingIndicator();
             };
             
             ws.onerror = (error) => {
@@ -2285,12 +2493,14 @@ class PocketParrot {
                 document.getElementById('wsStatusText').className = 'text-red-400';
                 this.updateStatus('Connection test failed');
                 console.error('WebSocket test error:', error);
+                this.hideLoadingIndicator();
             };
         } catch (error) {
             document.getElementById('wsStatusText').textContent = '❌ Invalid endpoint';
             document.getElementById('wsStatusText').className = 'text-red-400';
             this.updateStatus('Invalid WebSocket endpoint');
             console.error('WebSocket test error:', error);
+            this.hideLoadingIndicator();
         }
     }
 
