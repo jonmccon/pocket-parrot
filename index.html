@@ -188,6 +188,15 @@
                     </div>
                 </div>
 
+                <!-- Network Status Indicator -->
+                <div id="networkStatus" class="bg-gray-100 p-3 rounded-sm mb-2 border border-gray-300 hidden">
+                    <div class="flex items-center justify-between text-sm">
+                        <span class="text-gray-600">Network:</span>
+                        <span id="networkQuality" class="font-medium text-gray-800">Detecting...</span>
+                    </div>
+                    <div id="networkMessage" class="text-xs text-gray-500 mt-1"></div>
+                </div>
+
                 <!-- Status Display -->
                 <div id="statusDisplay" class="bg-gray-700 p-3 rounded-lg mb-2 border border-gray-600 hidden">
                     <div class="text-sm text-gray-300">Status: <span id="statusText" class="font-medium text-gray-100">Ready</span></div>
@@ -573,6 +582,9 @@
 
     <!-- Configuration Script -->
     <script src="config.js"></script>
+    
+    <!-- Network Manager Script -->
+    <script src="network-manager.js"></script>
     
     <!-- Data Access API Script -->
     <script src="data-api.js"></script>

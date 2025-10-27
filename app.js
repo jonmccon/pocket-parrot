@@ -23,11 +23,22 @@ class PocketParrot {
         this.samplesSent = 0;
         this.autoStartCapture = false; // Will be set by URL params or config
         
+        // Network manager
+        this.networkManager = null;
+        
         this.init();
     }
 
     async init() {
         console.log('🦜 Initializing Pocket Parrot...');
+        
+        // Initialize Network Manager
+        if (typeof NetworkManager !== 'undefined') {
+            this.networkManager = new NetworkManager();
+            console.log('📡 Network Manager initialized');
+        } else {
+            console.warn('⚠️ Network Manager not available, using legacy mode');
+        }
         
         // Initialize IndexedDB
         await this.initDB();
@@ -43,6 +54,9 @@ class PocketParrot {
         
         // Register service worker
         this.registerServiceWorker();
+        
+        // Update network status display
+        this.updateNetworkStatus();
         
         console.log('✅ Pocket Parrot initialized successfully');
     }
@@ -386,9 +400,78 @@ class PocketParrot {
     }
 
     /**
+     * Update network status display
+     */
+    updateNetworkStatus() {
+        if (!this.networkManager) return;
+
+        const statusDiv = document.getElementById('networkStatus');
+        const qualitySpan = document.getElementById('networkQuality');
+        const messageDiv = document.getElementById('networkMessage');
+
+        if (!statusDiv || !qualitySpan || !messageDiv) return;
+
+        const status = this.networkManager.getStatus();
+        
+        // Show status during streaming or if connection is slow
+        if (this.isLiveStreaming || status.isSlow || !status.isOnline) {
+            statusDiv.classList.remove('hidden');
+        } else {
+            statusDiv.classList.add('hidden');
+            return;
+        }
+
+        // Update quality indicator
+        let qualityText = '';
+        let qualityColor = '';
+        
+        if (!status.isOnline) {
+            qualityText = '🔴 Offline';
+            qualityColor = 'text-red-600';
+        } else if (status.quality === 'poor') {
+            qualityText = '🟠 Slow Connection';
+            qualityColor = 'text-orange-600';
+        } else if (status.quality === 'moderate') {
+            qualityText = '🟡 Moderate';
+            qualityColor = 'text-yellow-600';
+        } else {
+            qualityText = '🟢 Good';
+            qualityColor = 'text-green-600';
+        }
+
+        qualitySpan.textContent = qualityText;
+        qualitySpan.className = `font-medium ${qualityColor}`;
+
+        // Update message based on status
+        if (!status.isOnline) {
+            messageDiv.textContent = 'Data will be saved locally';
+        } else if (status.quality === 'poor') {
+            messageDiv.textContent = 'Reduced data frequency for better performance';
+        } else if (status.quality === 'moderate') {
+            messageDiv.textContent = 'Weather data cached to reduce lag';
+        } else {
+            messageDiv.textContent = 'All features available';
+        }
+
+        // Update periodically while streaming
+        if (this.isLiveStreaming) {
+            setTimeout(() => this.updateNetworkStatus(), 10000); // Every 10 seconds
+        }
+    }
+
+    /**
      * Fetch weather data for current location with enhanced status reporting
+     * Now delegates to NetworkManager for better caching and retry logic
      */
     async fetchWeatherData(lat, lon, locationSource = 'gps') {
+        // Use network manager if available
+        if (this.networkManager) {
+            const result = await this.networkManager.fetchWeatherData(lat, lon, locationSource);
+            this.updateWeatherUI(result);
+            return result;
+        }
+
+        // Fallback to original implementation if network manager not available
         const startTime = Date.now();
         
         // Validate input parameters
@@ -1097,8 +1180,35 @@ class PocketParrot {
         try {
             const timestamp = new Date().toISOString();
             
-            // Get streaming configuration
-            const config = this.getStreamingConfig();
+            // Get streaming configuration (may be adapted based on network)
+            let config = this.getStreamingConfig();
+            
+            // Apply adaptive configuration from network manager if available
+            if (this.networkManager) {
+                const adaptiveConfig = this.networkManager.getAdaptiveConfig();
+                
+                // Override config with adaptive settings on slow connections
+                if (adaptiveConfig.includeWeather === false) {
+                    config.includeWeather = false;
+                }
+                
+                // Adjust interval dynamically on poor connections
+                const status = this.networkManager.getStatus();
+                if (status.isSlow && adaptiveConfig.captureInterval !== this.captureIntervalMs) {
+                    console.log(`📡 Adapting capture interval: ${this.captureIntervalMs}ms -> ${adaptiveConfig.captureInterval}ms (${status.quality} connection)`);
+                    this.captureIntervalMs = adaptiveConfig.captureInterval;
+                    
+                    // Restart streaming with new interval
+                    if (this.streamingInterval) {
+                        clearInterval(this.streamingInterval);
+                        this.streamingInterval = setInterval(async () => {
+                            if (this.isLiveStreaming) {
+                                await this.captureStreamingSample();
+                            }
+                        }, this.captureIntervalMs);
+                    }
+                }
+            }
             
             const dataPoint = {
                 timestamp,
@@ -1161,6 +1271,7 @@ class PocketParrot {
             }
             
             // Get weather data based on configuration (less frequently to reduce API calls)
+            // Only fetch every 12 samples (~1 minute at 5s interval) or if forced by full mode
             if (config.includeWeather && (config.dataMode === 'full' || this.samplesSent % 12 === 0) && this.currentPosition) {
                 const weatherResult = await this.getWeatherWithFallback({
                     latitude: this.currentPosition.coords.latitude,
