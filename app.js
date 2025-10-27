@@ -307,6 +307,53 @@ class PocketParrot {
     }
 
     /**
+     * Show loading indicator for async operations
+     */
+    showLoadingIndicator(message = 'Loading...') {
+        const overlay = document.getElementById('loadingOverlay');
+        if (overlay) {
+            const textElement = overlay.querySelector('.text-center');
+            if (textElement) {
+                textElement.textContent = message;
+            }
+            overlay.classList.remove('hidden');
+        }
+    }
+
+    /**
+     * Hide loading indicator
+     */
+    hideLoadingIndicator() {
+        const overlay = document.getElementById('loadingOverlay');
+        if (overlay) {
+            overlay.classList.add('hidden');
+        }
+    }
+
+    /**
+     * Show inline loading spinner in an element
+     */
+    showInlineSpinner(elementId) {
+        const element = document.getElementById(elementId);
+        if (element) {
+            const spinner = document.createElement('div');
+            spinner.className = 'mini-spinner';
+            spinner.id = `${elementId}-spinner`;
+            element.prepend(spinner);
+        }
+    }
+
+    /**
+     * Remove inline loading spinner
+     */
+    hideInlineSpinner(elementId) {
+        const spinner = document.getElementById(`${elementId}-spinner`);
+        if (spinner) {
+            spinner.remove();
+        }
+    }
+
+    /**
      * Update orientation data display and broadcast to WebSocket if enabled
      */
     updateOrientationData(event) {
@@ -2306,6 +2353,8 @@ class PocketParrot {
      */
     async enableWebSocket() {
         try {
+            this.showLoadingIndicator('Connecting to server...');
+            
             if (window.pocketParrotAPI) {
                 await window.pocketParrotAPI.enableWebSocket();
                 this.updateStatus('WebSocket enabled');
@@ -2326,9 +2375,11 @@ class PocketParrot {
                         document.getElementById('wsStatusText').textContent = '⚠️ Connection failed - check endpoint and try again';
                         document.getElementById('wsStatusText').className = 'text-yellow-400';
                     }
+                    this.hideLoadingIndicator();
                 }, 2000);
             }
         } catch (error) {
+            this.hideLoadingIndicator();
             console.error('Error enabling WebSocket:', error);
             alert('Failed to enable WebSocket: ' + error.message);
         }
@@ -2367,6 +2418,7 @@ class PocketParrot {
             return;
         }
         
+        this.showLoadingIndicator('Testing connection...');
         this.updateStatus('Testing WebSocket connection...');
         document.getElementById('wsStatus').classList.remove('hidden');
         document.getElementById('wsStatusText').textContent = 'Testing connection...';
@@ -2380,6 +2432,7 @@ class PocketParrot {
                 document.getElementById('wsStatusText').textContent = '❌ Connection timeout';
                 document.getElementById('wsStatusText').className = 'text-red-400';
                 this.updateStatus('Connection test failed: timeout');
+                this.hideLoadingIndicator();
             }, 5000);
             
             ws.onopen = () => {
@@ -2388,6 +2441,7 @@ class PocketParrot {
                 document.getElementById('wsStatusText').className = 'text-green-400';
                 this.updateStatus('Connection test successful');
                 ws.close();
+                this.hideLoadingIndicator();
             };
             
             ws.onerror = (error) => {
@@ -2396,12 +2450,14 @@ class PocketParrot {
                 document.getElementById('wsStatusText').className = 'text-red-400';
                 this.updateStatus('Connection test failed');
                 console.error('WebSocket test error:', error);
+                this.hideLoadingIndicator();
             };
         } catch (error) {
             document.getElementById('wsStatusText').textContent = '❌ Invalid endpoint';
             document.getElementById('wsStatusText').className = 'text-red-400';
             this.updateStatus('Invalid WebSocket endpoint');
             console.error('WebSocket test error:', error);
+            this.hideLoadingIndicator();
         }
     }
 
