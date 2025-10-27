@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Manager Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .test-section {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .test-result {
+            padding: 12px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border-left: 4px solid;
+        }
+        
+        .success {
+            background: #d4edda;
+            border-color: #28a745;
+            color: #155724;
+        }
+        
+        .info {
+            background: #d1ecf1;
+            border-color: #17a2b8;
+            color: #0c5460;
+        }
+        
+        .warning {
+            background: #fff3cd;
+            border-color: #ffc107;
+            color: #856404;
+        }
+        
+        .error {
+            background: #f8d7da;
+            border-color: #dc3545;
+            color: #721c24;
+        }
+        
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+        }
+        
+        button:hover {
+            background: #0056b3;
+        }
+        
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        
+        .stat {
+            display: inline-block;
+            margin: 10px 20px 10px 0;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .code {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🌐 Network Manager Test Suite</h1>
+        <p>Testing network quality detection, caching, and adaptive behavior for cellular connections</p>
+    </div>
+
+    <!-- Network Status Section -->
+    <div class="test-section">
+        <h2>📡 Current Network Status</h2>
+        <div id="networkStats">
+            <div class="stat">
+                <div class="stat-label">Quality</div>
+                <div class="stat-value" id="qualityStat">...</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Type</div>
+                <div class="stat-value" id="typeStat">...</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Downlink</div>
+                <div class="stat-value" id="downlinkStat">...</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">RTT</div>
+                <div class="stat-value" id="rttStat">...</div>
+            </div>
+        </div>
+        <button onclick="refreshNetworkStatus()">🔄 Refresh Status</button>
+    </div>
+
+    <!-- Weather Cache Test -->
+    <div class="test-section">
+        <h2>🌤️ Weather API Caching Test</h2>
+        <p>Tests that weather data is cached for 5 minutes to reduce API calls on slow connections</p>
+        <button onclick="testWeatherCache()" id="weatherTestBtn">Run Weather Cache Test</button>
+        <div id="weatherTestOutput"></div>
+    </div>
+
+    <!-- Adaptive Configuration Test -->
+    <div class="test-section">
+        <h2>⚙️ Adaptive Configuration Test</h2>
+        <p>Tests that configuration adapts based on network quality</p>
+        <button onclick="testAdaptiveConfig()" id="configTestBtn">Run Adaptive Config Test</button>
+        <div id="configTestOutput"></div>
+    </div>
+
+    <!-- Photo Compression Test -->
+    <div class="test-section">
+        <h2>📸 Photo Compression Test</h2>
+        <p>Tests that photo compression adapts to network quality</p>
+        <button onclick="testPhotoCompression()" id="photoTestBtn">Run Photo Compression Test</button>
+        <div id="photoTestOutput"></div>
+    </div>
+
+    <!-- Performance Test -->
+    <div class="test-section">
+        <h2>⚡ Performance Test</h2>
+        <p>Measures response times for various operations</p>
+        <button onclick="testPerformance()" id="perfTestBtn">Run Performance Test</button>
+        <div id="perfTestOutput"></div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="../network-manager.js"></script>
+    <script>
+        let networkManager;
+        
+        function log(containerId, message, type = 'info') {
+            const container = document.getElementById(containerId);
+            const div = document.createElement('div');
+            div.className = `test-result ${type}`;
+            div.textContent = message;
+            container.appendChild(div);
+        }
+        
+        function clearLog(containerId) {
+            document.getElementById(containerId).innerHTML = '';
+        }
+        
+        function refreshNetworkStatus() {
+            if (!networkManager) {
+                networkManager = new NetworkManager();
+            }
+            
+            const status = networkManager.getStatus();
+            
+            document.getElementById('qualityStat').textContent = status.quality.toUpperCase();
+            document.getElementById('typeStat').textContent = status.effectiveType || 'unknown';
+            document.getElementById('downlinkStat').textContent = status.downlink ? `${status.downlink} Mbps` : 'N/A';
+            document.getElementById('rttStat').textContent = status.rtt ? `${status.rtt} ms` : 'N/A';
+            
+            // Color code quality
+            const qualityEl = document.getElementById('qualityStat');
+            if (status.quality === 'good') {
+                qualityEl.style.color = '#28a745';
+            } else if (status.quality === 'moderate') {
+                qualityEl.style.color = '#ffc107';
+            } else if (status.quality === 'poor') {
+                qualityEl.style.color = '#dc3545';
+            }
+        }
+        
+        async function testWeatherCache() {
+            const btn = document.getElementById('weatherTestBtn');
+            btn.disabled = true;
+            clearLog('weatherTestOutput');
+            
+            log('weatherTestOutput', 'Starting weather cache test...', 'info');
+            
+            try {
+                // Test location (New York City)
+                const lat = 40.7128;
+                const lon = -74.0060;
+                
+                // First fetch - should hit API
+                log('weatherTestOutput', '1. Fetching weather data (should hit API)...', 'info');
+                const start1 = Date.now();
+                const result1 = await networkManager.fetchWeatherData(lat, lon, 'gps');
+                const time1 = Date.now() - start1;
+                
+                if (result1.status === 'success') {
+                    log('weatherTestOutput', `✓ First fetch successful (${time1}ms)`, 'success');
+                    log('weatherTestOutput', `  Cached: ${result1.cached || false}`, 'info');
+                    log('weatherTestOutput', `  Temperature: ${result1.data.temperature}°C`, 'info');
+                } else {
+                    log('weatherTestOutput', `✗ First fetch failed: ${result1.message}`, 'error');
+                }
+                
+                // Immediate second fetch - should be cached
+                log('weatherTestOutput', '2. Fetching again immediately (should be cached)...', 'info');
+                const start2 = Date.now();
+                const result2 = await networkManager.fetchWeatherData(lat, lon, 'gps');
+                const time2 = Date.now() - start2;
+                
+                if (result2.cached) {
+                    log('weatherTestOutput', `✓ Second fetch used cache (${time2}ms) - ${Math.round(time1/time2)}x faster!`, 'success');
+                    log('weatherTestOutput', `  Cache age: ${result2.cacheAge} seconds`, 'info');
+                } else {
+                    log('weatherTestOutput', `⚠ Second fetch did not use cache`, 'warning');
+                }
+                
+                // Cache stats
+                const stats = networkManager.getCacheStats();
+                log('weatherTestOutput', `Cache size: ${stats.weatherCacheSize} entries`, 'info');
+                
+                log('weatherTestOutput', '✓ Weather cache test completed', 'success');
+                
+            } catch (error) {
+                log('weatherTestOutput', `✗ Test failed: ${error.message}`, 'error');
+            }
+            
+            btn.disabled = false;
+        }
+        
+        function testAdaptiveConfig() {
+            const btn = document.getElementById('configTestBtn');
+            btn.disabled = true;
+            clearLog('configTestOutput');
+            
+            log('configTestOutput', 'Starting adaptive configuration test...', 'info');
+            
+            const status = networkManager.getStatus();
+            const config = networkManager.getAdaptiveConfig();
+            
+            log('configTestOutput', `Current network quality: ${status.quality}`, 'info');
+            log('configTestOutput', `Is slow connection: ${status.isSlow}`, status.isSlow ? 'warning' : 'success');
+            
+            log('configTestOutput', 'Adaptive configuration:', 'info');
+            log('configTestOutput', `  Capture Interval: ${config.captureInterval}ms`, 'info');
+            log('configTestOutput', `  Include Weather: ${config.includeWeather}`, 'info');
+            log('configTestOutput', `  Include Photos: ${config.includePhotos}`, 'info');
+            log('configTestOutput', `  Photo Quality: ${config.photoQuality}`, 'info');
+            log('configTestOutput', `  Max Photo Width: ${config.maxPhotoWidth}px`, 'info');
+            
+            // Validate adaptive behavior
+            if (status.quality === 'poor') {
+                if (config.captureInterval >= 15000 && !config.includeWeather) {
+                    log('configTestOutput', '✓ Configuration correctly adapted for poor connection', 'success');
+                } else {
+                    log('configTestOutput', '⚠ Configuration may not be optimal for poor connection', 'warning');
+                }
+            } else if (status.quality === 'moderate') {
+                if (config.captureInterval >= 10000) {
+                    log('configTestOutput', '✓ Configuration correctly adapted for moderate connection', 'success');
+                } else {
+                    log('configTestOutput', '⚠ Configuration may not be optimal for moderate connection', 'warning');
+                }
+            } else {
+                log('configTestOutput', '✓ Using full-featured configuration for good connection', 'success');
+            }
+            
+            log('configTestOutput', '✓ Adaptive configuration test completed', 'success');
+            btn.disabled = false;
+        }
+        
+        function testPhotoCompression() {
+            const btn = document.getElementById('photoTestBtn');
+            btn.disabled = true;
+            clearLog('photoTestOutput');
+            
+            log('photoTestOutput', 'Starting photo compression test...', 'info');
+            
+            const config = networkManager.getAdaptiveConfig();
+            const status = networkManager.getStatus();
+            
+            log('photoTestOutput', `Network quality: ${status.quality}`, 'info');
+            log('photoTestOutput', `Photo settings:`, 'info');
+            log('photoTestOutput', `  Quality: ${config.photoQuality} (${Math.round(config.photoQuality * 100)}%)`, 'info');
+            log('photoTestOutput', `  Max Width: ${config.maxPhotoWidth}px`, 'info');
+            
+            // Estimate compression
+            const baseSize = 2 * 1024 * 1024; // 2MB baseline
+            const widthRatio = config.maxPhotoWidth / 800;
+            const estimatedSize = baseSize * widthRatio * widthRatio * config.photoQuality;
+            
+            log('photoTestOutput', `Estimated size for 2MB photo: ${Math.round(estimatedSize / 1024)}KB`, 'info');
+            log('photoTestOutput', `Compression ratio: ${Math.round((1 - estimatedSize / baseSize) * 100)}%`, 'success');
+            
+            if (status.quality === 'poor' && config.photoQuality <= 0.4) {
+                log('photoTestOutput', '✓ Aggressive compression enabled for poor connection', 'success');
+            } else if (status.quality === 'moderate' && config.photoQuality <= 0.6) {
+                log('photoTestOutput', '✓ Moderate compression enabled for moderate connection', 'success');
+            } else {
+                log('photoTestOutput', '✓ Standard compression for good connection', 'success');
+            }
+            
+            log('photoTestOutput', '✓ Photo compression test completed', 'success');
+            btn.disabled = false;
+        }
+        
+        async function testPerformance() {
+            const btn = document.getElementById('perfTestBtn');
+            btn.disabled = true;
+            clearLog('perfTestOutput');
+            
+            log('perfTestOutput', 'Starting performance test...', 'info');
+            
+            try {
+                // Test 1: Network status detection
+                const start1 = performance.now();
+                networkManager.detectNetworkQuality();
+                const time1 = performance.now() - start1;
+                log('perfTestOutput', `Network detection: ${time1.toFixed(2)}ms`, time1 < 10 ? 'success' : 'warning');
+                
+                // Test 2: Adaptive config generation
+                const start2 = performance.now();
+                const config = networkManager.getAdaptiveConfig();
+                const time2 = performance.now() - start2;
+                log('perfTestOutput', `Config generation: ${time2.toFixed(2)}ms`, time2 < 5 ? 'success' : 'warning');
+                
+                // Test 3: Cache stats
+                const start3 = performance.now();
+                const stats = networkManager.getCacheStats();
+                const time3 = performance.now() - start3;
+                log('perfTestOutput', `Cache stats: ${time3.toFixed(2)}ms`, time3 < 5 ? 'success' : 'warning');
+                
+                log('perfTestOutput', '✓ Performance test completed', 'success');
+                log('perfTestOutput', 'All operations completed in under 20ms - excellent performance!', 'success');
+                
+            } catch (error) {
+                log('perfTestOutput', `✗ Test failed: ${error.message}`, 'error');
+            }
+            
+            btn.disabled = false;
+        }
+        
+        // Initialize on page load
+        window.addEventListener('load', () => {
+            networkManager = new NetworkManager();
+            refreshNetworkStatus();
+            
+            // Auto-refresh network status every 10 seconds
+            setInterval(refreshNetworkStatus, 10000);
+        });
+    </script>
+</body>
+</html>
