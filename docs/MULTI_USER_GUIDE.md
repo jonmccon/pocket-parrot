@@ -29,7 +29,7 @@ Each user's phone runs Pocket Parrot in their browser, captures sensor data, and
 
 ## Connection Types
 
-The multi-user server (`multi-user-server.js`) supports three types of connections:
+The multi-user server (`multi-user-server.js`) supports five types of connections:
 
 ### 1. Active Users and Observers (`/pocket-parrot`)
 - **Purpose**: Primary data ingestion from Pocket Parrot mobile clients
@@ -47,7 +47,7 @@ The multi-user server (`multi-user-server.js`) supports three types of connectio
   - Can kick users, promote users, or demote active sender
   - No data transmission capability
 
-### 3. Passive Broadcast Listeners (`/listener`) ⭐ NEW
+### 3. Passive Broadcast Listeners (`/listener`)
 - **Purpose**: Third-party integrations that only need to receive data
 - **Behavior**:
   - **Receive only**: Gets sensor data broadcasts and statistics
@@ -55,11 +55,41 @@ The multi-user server (`multi-user-server.js`) supports three types of connectio
   - **No session messages**: Does not receive user-specific messages like promotion, observer_mode, etc.
   - **Ideal for**: Data visualization clients (e.g., p5.js sketches), analytics dashboards, logging systems
 
-**Use Cases for Passive Listeners:**
-- Real-time visualization applications (e.g., the-plot-quickens sketch)
-- Data analytics dashboards that aggregate from multiple events
-- External logging and monitoring systems
-- Third-party integrations that only need read access
+### 4. Low-Latency Orientation Stream (`/orientation`) ⚡
+- **Purpose**: High-frequency, low-latency orientation data for real-time applications
+- **Behavior**:
+  - **Immediate delivery**: Orientation data (alpha, beta, gamma) sent as soon as received
+  - **Minimal overhead**: Only orientation angles, no GPS, weather, or media
+  - **High frequency**: Supports rapid updates (10-60 Hz) for responsive applications
+  - **Read-only**: Listeners cannot send data
+- **Ideal for**: 3D visualizations, AR/VR experiences, motion-controlled applications
+
+### 5. Batched Bulk Data Stream (`/bulk`) 📦
+- **Purpose**: Efficient delivery of non-time-critical data (GPS, weather, photos, audio)
+- **Behavior**:
+  - **Batched delivery**: Data queued and sent in batches at regular intervals (default: 1 second)
+  - **Optimized bandwidth**: Reduces message overhead for bulk data
+  - **Excludes orientation**: Orientation data not included (use `/orientation` endpoint)
+  - **Read-only**: Listeners cannot send data
+  - **Configurable batching**: Batch interval and max batch size can be adjusted
+- **Ideal for**: Analytics, logging systems, data archival, photo/audio processing pipelines
+
+**Use Cases for Specialized Endpoints:**
+- **Real-time 3D visualizations**: Use `/orientation` for immediate orientation updates
+- **Data analytics dashboards**: Use `/bulk` for efficient batch processing  
+- **External logging applications**: Use `/bulk` for optimized data archival
+- **Research data collection**: Use `/listener` or `/bulk` depending on latency requirements
+- **Public visualization displays**: Use `/orientation` + `/bulk` for best performance
+
+**Choosing the Right Endpoint:**
+
+| Use Case | Endpoint | Why? |
+|----------|----------|------|
+| 3D/AR/VR visualization | `/orientation` | Sub-millisecond latency for natural feel |
+| Live dashboard (mixed data) | `/listener` | Simple, gets everything immediately |
+| Analytics & logging | `/bulk` | Efficient batching, optimized for processing |
+| Photo/audio processing | `/bulk` | Batched media delivery saves bandwidth |
+| Dual-purpose app | `/orientation` + `/bulk` | Real-time UI + background logging |
 
 ---
 

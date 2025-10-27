@@ -48,7 +48,10 @@ https://jonmccon.github.io/pocket-parrot/
 
 ### Data Capture
 - **Capture Now**: Instantly capture a single data point with all available sensors
-- **Continuous Capture**: Automatically capture data every 5 seconds
+- **Continuous Capture**: Automatically capture data at configurable intervals (default: 5 seconds)
+  - **Recommended rates**: 1-10 seconds for most use cases
+  - **High-frequency**: Use WebSocket streaming with `/orientation` endpoint for real-time data (sub-second)
+  - **Battery consideration**: Longer intervals (10-30 seconds) save battery life
 - **Camera**: Start camera for photo capture with automatic object detection
 - **Audio**: Record short audio snippets with start/stop controls
 
@@ -63,7 +66,7 @@ https://jonmccon.github.io/pocket-parrot/
 - Includes base64-encoded images and audio
 - Perfect for data analysis or backup
 
-### 📡 Data Access API *(NEW)*
+### 📡 Data Access API
 - **JavaScript API**: Programmatic access to sensor data for same-origin integrations
 - **WebSocket Push**: Real-time data streaming to external servers
 - **Multi-User Support**: Multiple phones can stream to one server simultaneously
@@ -71,9 +74,122 @@ https://jonmccon.github.io/pocket-parrot/
 - **Event Mode**: Pre-configure for seamless event experiences - scan QR, start streaming!
 - **Real-time Subscriptions**: Observer pattern for immediate data access
 - **Flexible Filtering**: Query by date, GPS, media, and more
-- **See [DATA_ACCESS_API.md](docs/DATA_ACCESS_API.md) for complete documentation**
+
+**Optimized Endpoints for Different Use Cases:**
+- **`/orientation`** - Low-latency orientation data (< 1ms) for real-time 3D visualizations, AR/VR
+- **`/bulk`** - Batched data delivery (GPS, weather, media) for efficient analytics and logging
+- **`/listener`** - General-purpose passive listening for all sensor data
+- **`/pocket-parrot`** - Primary endpoint for mobile clients sending data
+
+**Documentation:**
+- **See [DATA_ACCESS_API.md](docs/DATA_ACCESS_API.md) for complete API documentation**
 - **See [MULTI_USER_GUIDE.md](docs/MULTI_USER_GUIDE.md) for multi-user streaming setup**
 - **See [EVENT_DEPLOYMENT_GUIDE.md](docs/EVENT_DEPLOYMENT_GUIDE.md) for event deployments**
+- **See [server/README.md](server/README.md) for endpoint specifications and protocols**
+
+## Recommended Usage Patterns
+
+### Data Capture Rates
+
+Choose the capture interval based on your use case:
+
+| Use Case | Recommended Interval | Data Rate | Considerations |
+|----------|---------------------|-----------|----------------|
+| **Real-time visualization** | Use `/orientation` endpoint | High (10-60 Hz) | Immediate orientation updates for 3D/AR/VR |
+| **Live tracking** | 1-5 seconds | Medium | Good balance of accuracy and battery life |
+| **General monitoring** | 5-10 seconds | Low-Medium | Default setting, works well for most cases |
+| **Battery conservation** | 30-60 seconds | Low | Extends battery life significantly |
+| **Analytics/Research** | 10-30 seconds | Low | Sufficient for trends and patterns |
+
+### WebSocket Endpoint Selection
+
+Choose the right endpoint for your integration:
+
+**`/orientation` - Low-latency Orientation Stream**
+- **Best for**: Real-time 3D visualizations, AR/VR, interactive installations
+- **Latency**: < 1ms (immediate delivery)
+- **Payload**: Minimal (orientation data only: alpha, beta, gamma)
+- **Frequency**: Supports high-frequency updates (10-60 Hz)
+
+**`/bulk` - Batched Bulk Data Stream**
+- **Best for**: Data analytics, logging, archival, photo/audio processing
+- **Latency**: ~1 second (configurable batching interval)
+- **Payload**: Complete (GPS, weather, motion, media, objects detected)
+- **Efficiency**: Batches up to 10 data points per message
+
+**`/listener` - General Passive Listener**
+- **Best for**: General-purpose data consumption, mixed requirements
+- **Latency**: Immediate (no batching)
+- **Payload**: Complete data points sent individually
+- **Use case**: Simpler integration when you need all data types
+
+**`/pocket-parrot` - Primary Client Endpoint**
+- **Best for**: Mobile Pocket Parrot clients sending data
+- **Features**: Session management, active sender promotion, observer mode
+- **Use case**: The app itself, not typically used for custom integrations
+
+### Performance Optimization
+
+**For Real-time Applications:**
+```javascript
+// Connect to orientation endpoint for minimal latency
+const orientationWs = new WebSocket('ws://server:8080/orientation');
+orientationWs.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  if (msg.type === 'orientation_data') {
+    update3DScene(msg.orientation); // Immediate update
+  }
+};
+```
+
+**For Analytics & Logging:**
+```javascript
+// Connect to bulk endpoint for efficient batch processing
+const bulkWs = new WebSocket('ws://server:8080/bulk');
+bulkWs.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  if (msg.type === 'bulk_data_batch') {
+    msg.data.forEach(dataPoint => {
+      saveToDatabase(dataPoint); // Process batch
+    });
+  }
+};
+```
+
+**Combined Approach (Best of Both):**
+```javascript
+// Use both endpoints simultaneously
+const orientationWs = new WebSocket('ws://server:8080/orientation');
+const bulkWs = new WebSocket('ws://server:8080/bulk');
+
+// Real-time UI updates from orientation
+orientationWs.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  if (msg.type === 'orientation_data') {
+    updateUIImmediately(msg.orientation);
+  }
+};
+
+// Background data processing from bulk
+bulkWs.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  if (msg.type === 'bulk_data_batch') {
+    processInBackground(msg.data);
+  }
+};
+```
+
+### Data Rate Estimation
+
+Approximate bandwidth usage per device:
+
+| Capture Rate | Without Media | With Photos | With Audio | With Both |
+|--------------|--------------|-------------|------------|-----------|
+| 1/minute | ~50 KB/hour | ~500 KB/hour | ~300 KB/hour | ~750 KB/hour |
+| 1/5 seconds | ~600 KB/hour | ~6 MB/hour | ~3.6 MB/hour | ~9 MB/hour |
+| 1/second | ~3 MB/hour | ~30 MB/hour | ~18 MB/hour | ~45 MB/hour |
+
+**Orientation-only streaming** (via `/orientation` endpoint): ~5-10 KB/hour regardless of frequency
 
 ## Technical Details
 
